@@ -1,0 +1,30 @@
+units metal
+boundary p p p
+atom_style spin
+atom_modify map array
+newton on
+read_data ${data}
+
+pair_style spin/allegro_spin
+pair_coeff * * ${model} Mn Ge
+
+if "${frozen} == 1" then "velocity all set 0.0 0.0 0.0" else "velocity all create 300.0 19081 mom yes rot no dist gaussian"
+if "${frozen} == 1" then "fix integrator all spin/sib 0.0 0.0 91081 lattice frozen" else "fix integrator all spin/sib 300.0 0.1 91081 lattice moving"
+compute spinprops all property/atom spx spy spz sp fmx fmy fmz
+# NULL pair: exclude kinetic contributions from the moving lattice.
+compute cstress all centroid/stress/atom NULL pair
+compute press all pressure NULL pair
+neighbor 0.5 bin
+neigh_modify every 1 delay 0 check yes
+timestep 0.0001
+dump trajectory all custom 1 ${dump} id type x y z fx fy fz &
+  c_spinprops[1] c_spinprops[2] c_spinprops[3] c_spinprops[4] &
+  c_spinprops[5] c_spinprops[6] c_spinprops[7] &
+  c_cstress[1] c_cstress[2] c_cstress[3] c_cstress[4] c_cstress[5] &
+  c_cstress[6] c_cstress[7] c_cstress[8] c_cstress[9]
+dump_modify trajectory sort id format float %.16g
+thermo 1
+thermo_style custom step pe etotal temp fmax &
+  c_press[1] c_press[2] c_press[3] c_press[4] c_press[5] c_press[6]
+thermo_modify format float %.16g
+run ${steps}

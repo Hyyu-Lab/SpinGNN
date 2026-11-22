@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+VARIANT=${SPINGNN_LAMMPS_VARIANT:-serial}
+case "$(basename "$0")" in
+    lmp-mpi|spingnn-lmp-mpi) VARIANT=mpi ;;
+esac
+case "$VARIANT" in
+    serial|mpi) ;;
+    *) echo "SPINGNN_LAMMPS_VARIANT must be serial or mpi" >&2; exit 2 ;;
+esac
+
+TORCH_LIB=$(python -c 'import pathlib, torch; print(pathlib.Path(torch.__file__).resolve().parent / "lib")')
+export LD_LIBRARY_PATH="$TORCH_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "/opt/spingnn/lammps/$VARIANT/lmp" "$@"

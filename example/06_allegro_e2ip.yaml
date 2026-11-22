@@ -1,0 +1,162 @@
+# Geometry-only e2SLP: final scaled training settings; see E2IP.md.
+# Replace data, species, split sizes and output location.
+
+# VERY IMPORTANT: run and data / 运行与数据
+run_name: example
+root: results/allegro_e2ip
+# Fresh run; enable append only to resume an existing checkpoint.
+append: false
+batch_size: 1
+# 逻辑 GPU；物理 GPU 由启动命令 CUDA_VISIBLE_DEVICES 指定
+device: cuda:0
+dataset_file_name: ./example/data/structure.extxyz
+dataset_root: ./results/cache/allegro_e2ip
+n_train: 800
+n_val: 100
+chemical_symbol_to_type: {O: 0, Hf: 1}
+r_max: 6.0
+
+# Network / 网络结构
+lauto_loss: false
+ledge_cutoff: false
+l_max: 2
+spharm_soc_on_l_max: 2
+env_embed_multiplicity: 16
+two_body_latent_mlp_latent_dimensions: [128, 128, 128]
+latent_mlp_latent_dimensions: [128, 128, 128]
+num_layers: 2
+parity: o3_full
+PolynomialCutoff_p: 48
+edge_eng_mlp_latent_dimensions: [128, 128]
+
+# e2IP / 不确定性网络与数值缩放
+e2ip_latent_channels: 8
+e2ip_mlp_latent_dimensions: [128, 64]
+use_e2IP_loss: true
+validation_use_e2IP_loss: true
+evidential_key: forces
+# sf 残差的原有缩放；会影响正则项单位。onlyr 中不使用此项
+e2ip_spin_force_scale: 40.0
+# 内部数值缩放：残差 ×1000，协方差与 jitter ×1000²；已补偿，不改变 loss 配比
+e2ip_likelihood_scale: 1000.0
+# 仅似然计算使用 float64，网络仍按 default_dtype 运行
+e2ip_likelihood_dtype: float64
+# e2IP 正则项系数：NLL + loss_reg × regularizer
+loss_reg: 0.001
+# 额外数值缩放前的 Cholesky jitter；内部同步缩放
+loss_epsilon: 1.0e-06
+
+# Energy coefficients / 能量分量系数
+ene_coeff_trainable: false
+edge_onlyr_eng_coeff: 1.0
+edge_jmatrix_eng_coeff: 0.1
+edge_ani_eng_coeff: 0.01
+edge_biquad_eng_coeff: 0.01
+edge_eng_soc_on_coeff: 0.01
+
+# Train / 训练与早停
+learning_rate: 0.002
+lr_scheduler_name: ReduceLROnPlateau
+lr_scheduler_patience: 10
+lr_scheduler_factor: 0.5
+early_stopping_lower_bounds:
+  LR: 1.0e-06
+early_stopping_patiences:
+  validation_loss: 30
+metrics_key: validation_loss
+# 各目标的 loss 权重；evidential 目标权重作用于 NLL 与正则项之和
+loss_coeffs:
+  stress: 1.0
+  forces: 1.0
+  total_energy:
+    - 10.0
+    - PerAtomMSELoss
+max_epochs: 10000000
+early_stopping_upper_bounds:
+  cumulative_wall: 6048000.0
+
+# General / 通用设置
+seed: 111111
+dataset_seed: 123456
+default_dtype: float32
+
+# Network defaults / 网络默认参数
+model_builders:
+  - allegro.model.Allegro_e2IP
+  - PerSpeciesRescale
+  - ParaStressForceOutput
+  - RescaleEnergyEtc
+avg_num_neighbors: auto
+BesselBasis_num_basis: 8
+BesselBasis_trainable: false
+embed_initial_edge: true
+two_body_latent_mlp_nonlinearity: silu
+two_body_latent_mlp_initialization: uniform
+latent_mlp_nonlinearity: silu
+latent_mlp_initialization: uniform
+latent_resnet: true
+env_embed_mlp_latent_dimensions: []
+env_embed_mlp_nonlinearity: null
+env_embed_mlp_initialization: uniform
+edge_eng_mlp_nonlinearity: silu
+edge_eng_mlp_initialization: uniform
+
+# Evidence head defaults / e2IP 输出头参数
+f_node_nu_mlp_latent_dimensions: [128, 64]
+f_node_nu_mlp_initialization: uniform
+f_node_nu_mlp_nonlinearity: null
+f_node_kappa_mlp_latent_dimensions: [128, 64]
+f_node_kappa_mlp_initialization: uniform
+f_node_kappa_mlp_nonlinearity: null
+
+# Data loader / 数据读取
+dataset: ase
+ase_args:
+  format: extxyz
+train_val_split: random
+shuffle: true
+dataloader_num_workers: 0
+pad_to_alignment: 1
+
+# Optimizer and EMA / 优化器
+optimizer_name: Adam
+optimizer_kwargs:
+  amsgrad: true
+  betas: [0.9, 0.999]
+  eps: 1.0e-08
+  weight_decay: 0.0
+use_ema: true
+ema_decay: 0.99
+ema_use_num_updates: true
+
+# Precision / 精度与编译
+allow_tf32: false
+float32_matmul_precision: highest
+e3nn_optimization_defaults:
+  jit_script_fx: false
+spingnn_compile:
+  enabled: false
+  scope: full_fx
+  dynamic: true
+train_autocast:
+  enabled: false
+  dtype: bfloat16
+
+# Logging / 日志与 Uepi 显示倍率
+wandb: false
+verbose: info
+# 原始 Uepi 保留；带 x1/x100 后缀的列仅做显示换算。
+metrics_components:
+  - [stress, mae]
+  - [stress, rmse]
+  - [forces, mae]
+  - [forces, rmse]
+  - [total_energy, mae, {PerAtom: true}]
+  - [total_energy, rmse, {PerAtom: true}]
+  - [total_f_Uepi, mean, {functional: Trace}]
+  - - total_f_Uepi
+    - mean
+    - functional: Trace
+      functional_kwargs:
+        scale: 1.0  # Uepi 显示倍率；修改这里
+        units: x1  # CSV 列名后缀，与倍率对应

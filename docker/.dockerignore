@@ -1,0 +1,16 @@
+**/.git
+**/.gitignore
+**/.pytest_cache
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/build
+**/dist
+**/CMakeCache.txt
+**/CMakeFiles
+SpinGNN/validation
+SpinGNN/src/core/benchmark_data
+SpinGNN/src/core/tests
+SpinGNN/src/models/tests
+T-e3nn/tests
+T-e3nn/docs

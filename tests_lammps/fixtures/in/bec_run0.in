@@ -1,0 +1,25 @@
+units metal
+boundary p p p
+atom_style bec
+atom_modify map array
+newton on
+read_data ${data}
+read_bec ${bec}
+
+pair_style allegro
+pair_coeff * * ${model} Li Nb O
+fix field all efield 0.0 0.0 0.0 coupling bec piezo no
+
+compute becprops all property/atom becxx becxy becxz becyx becyy becyz beczx beczy beczz
+compute cstress all centroid/stress/atom NULL
+dump parity all custom 1 ${dump} id type x y z fx fy fz &
+  c_becprops[1] c_becprops[2] c_becprops[3] c_becprops[4] c_becprops[5] &
+  c_becprops[6] c_becprops[7] c_becprops[8] c_becprops[9] &
+  c_cstress[1] c_cstress[2] c_cstress[3] c_cstress[4] c_cstress[5] &
+  c_cstress[6] c_cstress[7] c_cstress[8] c_cstress[9]
+dump_modify parity sort id format float %.16g
+thermo 1
+thermo_style custom step pe etotal fmax
+thermo_modify format float %.16g
+run 0
+

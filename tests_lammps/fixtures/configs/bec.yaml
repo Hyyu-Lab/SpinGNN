@@ -1,0 +1,26 @@
+model_builders:
+  - allegro.model.Allegro_born
+  - ParaStressForceOutput
+r_max: 6.2
+chemical_symbol_to_type:
+  Li: 0
+  Nb: 1
+  O: 2
+avg_num_neighbors: 5.0
+default_dtype: float32
+allow_tf32: false
+edge_prune: dense
+l_max: 2
+parity: o3_full
+num_layers: 1
+env_embed_multiplicity: 8
+two_body_latent_mlp_latent_dimensions: [16]
+latent_mlp_latent_dimensions: [16]
+env_embed_mlp_latent_dimensions: []
+edge_eng_mlp_latent_dimensions: [8]
+born_scale_list: [1.1, 7.0, -2.7]
+born_scale_trainable: false
+BesselBasis_num_basis: 4
+BesselBasis_trainable: false
+PolynomialCutoff_p: 6
+embed_initial_edge: true

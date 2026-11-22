@@ -1,0 +1,39 @@
+# Structure-only NVT molecular dynamics.
+# Required model: non-spin pair_style nequip currently uses TorchScript .pth.
+# Run:
+#   lmp -in in.structure_md -var model deployed/structure.pth \
+#       -var data data.structure8 -var output structure_md
+
+variable temperature index 300.0
+variable steps index 1000
+variable thermo_every index 10
+variable dump_every index 10
+variable output index structure_md
+
+units metal
+boundary p p p
+atom_style atomic
+atom_modify map array
+newton off
+read_data ${data}
+
+pair_style nequip
+pair_coeff * * ${model} Mn Ge
+
+velocity all create ${temperature} 20260830 mom yes rot no dist gaussian
+fix integrator all nvt temp ${temperature} ${temperature} 0.1
+
+neighbor 0.5 bin
+neigh_modify every 1 delay 0 check yes
+timestep 0.0005
+
+thermo ${thermo_every}
+thermo_style custom step temp pe ke etotal press fmax
+thermo_modify lost error flush yes
+dump trajectory all custom ${dump_every} ${output}.lammpstrj &
+  id type x y z vx vy vz fx fy fz
+dump_modify trajectory sort id format float %.10g
+restart 1000 ${output}.restart.*
+
+run ${steps}
+write_restart ${output}.restart.final

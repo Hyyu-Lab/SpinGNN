@@ -1,0 +1,132 @@
+cff-version: 1.2.0
+message: >-
+  If you use SpinGNN, please cite the papers relevant to your workflow
+  from the references below.
+title: SpinGNN
+type: software
+repository-code: https://github.com/Hyyu-Lab/SpinGNN
+url: https://github.com/Hyyu-Lab/SpinGNN
+version: 0.1.0
+authors:
+  - given-names: Hongyu
+    family-names: Yu
+    affiliation: Fudan University
+    orcid: https://orcid.org/0000-0002-2513-2523
+  - given-names: Yang
+    family-names: Cheng
+    affiliation: Fudan University
+  - given-names: Jinyu
+    family-names: Liu
+    affiliation: Fudan University
+keywords:
+  - magnetic materials
+  - machine-learning interatomic potentials
+  - graph neural networks
+  - spin-lattice dynamics
+  - equivariant neural networks
+references:
+  - type: article
+    title: Physics-informed time-reversal equivariant neural network potential for magnetic materials
+    authors:
+      - given-names: Hongyu
+        family-names: Yu
+        orcid: https://orcid.org/0000-0002-2513-2523
+      - given-names: Boyu
+        family-names: Liu
+      - given-names: Yang
+        family-names: Zhong
+      - given-names: Liangliang
+        family-names: Hong
+      - given-names: Junyi
+        family-names: Ji
+      - given-names: Changsong
+        family-names: Xu
+      - given-names: Xingao
+        family-names: Gong
+      - given-names: Hongjun
+        family-names: Xiang
+        orcid: https://orcid.org/0000-0002-9396-3214
+    journal: Physical Review B
+    volume: '110'
+    issue: '10'
+    year: 2024
+    start: '104427'
+    date-published: 2024-09-23
+    doi: 10.1103/PhysRevB.110.104427
+    url: https://doi.org/10.1103/PhysRevB.110.104427
+  - type: article
+    title: Spin-dependent graph neural network potential for magnetic materials
+    authors:
+      - given-names: Hongyu
+        family-names: Yu
+        orcid: https://orcid.org/0000-0002-2513-2523
+      - given-names: Yang
+        family-names: Zhong
+      - given-names: Liangliang
+        family-names: Hong
+      - given-names: Changsong
+        family-names: Xu
+      - given-names: Wei
+        family-names: Ren
+      - given-names: Xingao
+        family-names: Gong
+      - given-names: Hongjun
+        family-names: Xiang
+        orcid: https://orcid.org/0000-0002-9396-3214
+    journal: Physical Review B
+    volume: '109'
+    issue: '14'
+    year: 2024
+    start: '144426'
+    date-published: 2024-04-26
+    doi: 10.1103/PhysRevB.109.144426
+    url: https://doi.org/10.1103/PhysRevB.109.144426
+  - type: article
+    title: Prediction of Room Temperature Ferroelectricity in Subnano Silicon Thin Films with an Antiferroelectric Ground State
+    authors:
+      - given-names: Hongyu
+        family-names: Yu
+        orcid: https://orcid.org/0000-0002-2513-2523
+      - given-names: Shihan
+        family-names: Deng
+      - given-names: Haiyan
+        family-names: Zhu
+      - given-names: Muting
+        family-names: Xie
+      - given-names: Yuwen
+        family-names: Zhang
+      - given-names: Xizhi
+        family-names: Shi
+      - given-names: Jianxin
+        family-names: Zhong
+      - given-names: Chaoyu
+        family-names: He
+      - given-names: Hongjun
+        family-names: Xiang
+        orcid: https://orcid.org/0000-0002-9396-3214
+    journal: Physical Review Letters
+    volume: '135'
+    year: 2025
+    start: '156801'
+    doi: 10.1103/xlkt-4wk5
+    url: https://doi.org/10.1103/xlkt-4wk5
+  - type: article
+    title: Tangent-plane evidential uncertainty in active learning for magnetic interatomic potentials
+    authors:
+      - given-names: Yang
+        family-names: Cheng
+      - given-names: Hongyu
+        family-names: Yu
+        orcid: https://orcid.org/0000-0002-2513-2523
+      - given-names: Hongjun
+        family-names: Xiang
+        orcid: https://orcid.org/0000-0002-9396-3214
+    journal: Physical Review Materials
+    volume: '10'
+    year: 2026
+    start: '103807'
+    doi: 10.1103/PhysRevMaterials.10.103807
+    url: https://doi.org/10.1103/PhysRevMaterials.10.103807
+    identifiers:
+      - type: url
+        value: https://arxiv.org/abs/2605.12353

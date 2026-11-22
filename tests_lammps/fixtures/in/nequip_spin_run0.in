@@ -1,0 +1,20 @@
+units metal
+boundary p p p
+atom_style spin
+atom_modify map array
+newton off
+read_data ${data}
+
+pair_style spin/nequip_spin
+pair_coeff * * ${model} Mn Ge
+
+compute spinprops all property/atom spx spy spz sp fmx fmy fmz
+dump parity all custom 1 ${dump} id type x y z fx fy fz &
+  c_spinprops[1] c_spinprops[2] c_spinprops[3] c_spinprops[4] &
+  c_spinprops[5] c_spinprops[6] c_spinprops[7]
+dump_modify parity sort id format float %.16g
+thermo 1
+thermo_style custom step pe etotal fmax
+thermo_modify format float %.16g
+run 0
+

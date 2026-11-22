@@ -1,0 +1,135 @@
+from typing import Optional
+import logging
+
+from e3nn import o3
+from nequip.data import AtomicDataDict, AtomicDataset
+
+from nequip.nn import SequentialGraphNetwork, AtomwiseReduce
+from nequip.nn.radial_basis import BesselBasis
+
+from nequip.nn.embedding import (
+    OneHotAtomEncoding,
+    SphericalHarmonicEdgeAttrs,
+    RadialBasisEdgeEncoding,
+)
+
+from allegro.nn import (
+    NormalizedBasis,
+    EdgewiseEnergySum,
+    EdgewiseReduce,
+    Allegro_dipole_Module,
+    ScalarMLP,
+)
+
+from nequip.model import builder_utils
+
+
+def Allegro_dipole(config, initialize: bool, dataset: Optional[AtomicDataset] = None):
+    logging.debug("Building Allegro model...")
+
+    # Handle avg num neighbors auto
+    builder_utils.add_avg_num_neighbors(
+        config=config, initialize=initialize, dataset=dataset
+    )
+
+    # Handle simple irreps
+    if "l_max" in config:
+        l_max = int(config["l_max"])
+        parity_setting = config["parity"]
+        assert parity_setting in ("o3_full", "o3_restricted", "so3")
+        if parity_setting == "so3":
+            raise ValueError(
+                "Allegro_dipole does not support parity='so3': so3 restricts "
+                "every feature to natural-parity irreps, so the 1o dipole "
+                "output has no path and is identically zero (measured max "
+                "abs atomic dipole = 0.0). Use "
+                "allegro.model.Allegro_dipole_etgnn for so3 instead: its "
+                "Edge_ETGNN head forms the dipole vector from edge geometry, "
+                "which carries the odd parity that so3 removes from the "
+                "features."
+            )
+        irreps_edge_sh = repr(
+            o3.Irreps.spherical_harmonics(
+                l_max, p=(1 if parity_setting == "so3" else -1)
+            )
+        )
+        nonscalars_include_parity = parity_setting == "o3_full"
+        # check consistant
+        assert config.get("irreps_edge_sh", irreps_edge_sh) == irreps_edge_sh
+        assert (
+            config.get("nonscalars_include_parity", nonscalars_include_parity)
+            == nonscalars_include_parity
+        )
+        config["irreps_edge_sh"] = irreps_edge_sh
+        config["nonscalars_include_parity"] = nonscalars_include_parity
+
+    layers = {
+        # -- Encode --
+        # Get various edge invariants
+        "one_hot": OneHotAtomEncoding,
+        "radial_basis": (
+            RadialBasisEdgeEncoding,
+            dict(
+                basis=(
+                    NormalizedBasis
+                    if config.get("normalize_basis", True)
+                    else BesselBasis
+                ),
+                out_field=AtomicDataDict.EDGE_EMBEDDING_KEY,
+            ),
+        ),
+        # Get edge nonscalars
+        "spharm": SphericalHarmonicEdgeAttrs,
+        # The core allegro model:
+        "allegro": (
+            Allegro_dipole_Module,
+            dict(
+                field=AtomicDataDict.EDGE_ATTRS_KEY,  # initial input is the edge SH
+                edge_invariant_field=AtomicDataDict.EDGE_EMBEDDING_KEY,
+                node_invariant_field=AtomicDataDict.NODE_ATTRS_KEY,
+            ),
+        ),
+        # Sum edge into atomic dipole
+        "edge_dipole_sum": (
+            EdgewiseReduce,
+            dict(
+                field=AtomicDataDict.ATOMIC_DIPOLE_KEY,
+                out_field=AtomicDataDict.ATOMIC_DIPOLE_KEY,
+                normalize_edge_reduce=True,
+                reduce="sum",
+            ),
+        ),
+        # Sum system dipole
+        "total_dipole_sum": (
+            AtomwiseReduce,
+            dict(
+                reduce="sum",
+                field=AtomicDataDict.ATOMIC_DIPOLE_KEY,
+                out_field=AtomicDataDict.TOTAL_DIPOLE_KEY,
+            ),
+        ),
+        # Sum edgewise energies -> per-atom energies:
+        "edge_eng": (
+            ScalarMLP,
+            dict(
+                field=AtomicDataDict.EDGE_FEATURES_KEY,
+                out_field=AtomicDataDict.EDGE_ENERGY_KEY,
+                mlp_output_dimension=1,
+            ),
+        ),
+        # Sum edgewise energies -> per-atom energies:
+        "edge_eng_sum": EdgewiseEnergySum,
+        # Sum system energy:
+        "total_energy_sum": (
+            AtomwiseReduce,
+            dict(
+                reduce="sum",
+                field=AtomicDataDict.PER_ATOM_ENERGY_KEY,
+                out_field=AtomicDataDict.TOTAL_ENERGY_KEY,
+            ),
+        ),
+    }
+
+    model = SequentialGraphNetwork.from_parameters(shared_params=config, layers=layers)
+
+    return model

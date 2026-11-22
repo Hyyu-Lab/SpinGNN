@@ -1,0 +1,53 @@
+# Short BEC/electric-field molecular dynamics example.
+# Model: pair_style allegro accepts TorchScript .pth or PT2 .pt2 + .pt2.meta.
+# Run:
+#   lmp -in in.bec_efield -var model deployed/bec.pth \
+#       -var data data.bec8 -var bec bec8.dat -var output bec_efield
+
+variable temperature index 100.0
+variable field_z index 0.001
+variable steps index 100
+variable thermo_every index 10
+variable dump_every index 10
+variable output index bec_efield
+
+units metal
+boundary p p p
+atom_style bec
+atom_modify map array
+newton on
+read_data ${data}
+read_bec ${bec}
+
+pair_style allegro
+pair_coeff * * ${model} Li Nb O
+
+# In metal units field_z is in volts/Angstrom. Piezo coupling is unavailable.
+fix field all efield 0.0 0.0 ${field_z} coupling bec piezo no
+compute dipole all bec_dipole
+compute bec_state all property/atom &
+  becxx becxy becxz becyx becyy becyz beczx beczy beczz &
+  becdipolex becdipoley becdipolez
+
+velocity all create ${temperature} 20260831 mom yes rot no dist gaussian
+fix integrator all nve
+
+neighbor 0.5 bin
+neigh_modify every 1 delay 0 check yes
+timestep 0.0005
+
+thermo ${thermo_every}
+thermo_style custom step temp pe ke etotal fmax &
+  c_dipole c_dipole[1] c_dipole[2] c_dipole[3] c_dipole[4]
+thermo_modify lost error flush yes
+dump trajectory all custom ${dump_every} ${output}.lammpstrj &
+  id type x y z fx fy fz &
+  c_bec_state[1] c_bec_state[2] c_bec_state[3] &
+  c_bec_state[4] c_bec_state[5] c_bec_state[6] &
+  c_bec_state[7] c_bec_state[8] c_bec_state[9] &
+  c_bec_state[10] c_bec_state[11] c_bec_state[12]
+dump_modify trajectory sort id format float %.10g
+restart 1000 ${output}.restart.*
+
+run ${steps}
+write_restart ${output}.restart.final

@@ -1,0 +1,85 @@
+# !! PLEASE NOTE: `minimal.yaml` is meant as a _minimal_ example of a tiny, fast
+#                 training that can be used to verify your nequip+allegro install,
+#                 the syntax of your configuration edits, etc.
+#                 These are NOT recommended hyperparameters for real applications!
+#                 Please see `example.yaml` for a reasonable starting point.
+
+# general
+root: results/aspirin
+run_name: minimal
+seed: 123456
+dataset_seed: 123456
+
+# -- network --
+model_builders:
+ - allegro.model.Allegro
+ - PerSpeciesRescale
+ - ForceOutput
+ - RescaleEnergyEtc
+
+# cutoffs
+r_max: 6.0
+
+# network symmetry
+l_max: 1
+# whether to include U(2)-symmetry / O(3) / SU(2) / SO(3)
+# allowed: u2, o3, su2, so3, o3_full, o3_restricted
+parity: o3_full  
+include_spin: false
+soc: true
+
+parity: o3_full  
+
+# allegro layers:
+num_layers: 1
+env_embed_multiplicity: 32
+two_body_latent_mlp_latent_dimensions: [32, 64]
+two_body_latent_mlp_nonlinearity: silu
+
+latent_mlp_latent_dimensions: [64]
+latent_mlp_nonlinearity: silu
+
+latent_resnet: true
+
+env_embed_mlp_latent_dimensions: []
+env_embed_mlp_nonlinearity: null
+
+edge_eng_mlp_latent_dimensions: [32]
+edge_eng_mlp_nonlinearity: null
+
+# -- data --
+dataset: npz                                                                       # type of data set, can be npz or ase
+dataset_url: http://quantum-machine.org/gdml/data/npz/aspirin_ccsd.zip             # url to download the npz. optional
+dataset_file_name: ./benchmark_data/aspirin_ccsd-train.npz                         # path to data set file
+key_mapping:
+  z: atomic_numbers                                                                # atomic species, integers
+  E: total_energy                                                                  # total potential eneriges to train to
+  F: forces                                                                        # atomic forces to train to
+  R: pos                                                                           # raw atomic positions
+npz_fixed_field_keys:                                                              # fields that are repeated across different examples
+  - atomic_numbers
+
+# A mapping of chemical species to type indexes is necessary if the dataset is provided with atomic numbers instead of type indexes.
+chemical_symbol_to_type:
+  H: 0
+  C: 1
+  O: 2
+
+# logging
+wandb: false
+wandb_project: aspirin
+verbose: info
+
+# training
+n_train: 25
+n_val: 5
+batch_size: 1
+max_epochs: 10
+learning_rate: 0.002
+
+# loss functionldetach_method: false                                                             # Use loss_1 + loss_2/(loss_2/loss_1).detach ... as the loss. See more in https://www.zhihu.com/question/375794498/answer/2292320194
+lauto_loss: false                                                                  # Auto weighted loss. If used, please cite Alex Kendall, Yarin Gal, Roberto Cipolla. Multi-Task Learning Using Uncertainty to Weigh Losses for Scene Geometry and Semantics. CVPR, 2018.
+loss_coeffs:  forces
+
+# optimizer
+optimizer_name: Adam

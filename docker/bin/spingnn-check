@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+python - <<'PY'
+import json
+import platform
+import sys
+
+import allegro
+import e3nn
+import nequip
+import numpy
+import torch
+
+assert sys.version_info[:3] == (3, 10, 20), sys.version
+assert torch.__version__ == "2.11.0+cu128", torch.__version__
+assert torch.version.cuda == "12.8", torch.version.cuda
+assert e3nn.__version__ == "0.5.0+spin", e3nn.__version__
+assert nequip.__version__ == "0.5.6+spin", nequip.__version__
+assert allegro.__version__ == "0.2.0+spin", allegro.__version__
+assert numpy.__version__ == "1.26.4", numpy.__version__
+assert torch.cuda.is_available(), "CUDA is unavailable; run with --gpus all"
+
+device = torch.cuda.get_device_properties(0)
+x = torch.arange(8, device="cuda", dtype=torch.float32)
+assert float((x * x).sum().cpu()) == 140.0
+print(json.dumps({
+    "status": "passed",
+    "python": platform.python_version(),
+    "torch": torch.__version__,
+    "torch_cuda": torch.version.cuda,
+    "e3nn": e3nn.__version__,
+    "nequip": nequip.__version__,
+    "allegro": allegro.__version__,
+    "numpy": numpy.__version__,
+    "gpu": device.name,
+    "compute_capability": f"{device.major}.{device.minor}",
+}, sort_keys=True))
+print("SPINGNN_GPU_CHECK_OK")
+PY
+
+nequip-train --help >/dev/null
+echo "NEQUIP_TRAIN_HELP_OK"
+
+for variant in serial mpi; do
+    if [[ "$variant" == mpi ]]; then
+        OMPI_MCA_pml=ob1 \
+        OMPI_MCA_btl=self,tcp \
+        UCX_TLS=self,tcp \
+            "/opt/spingnn/lammps/$variant/lmp" -h \
+            >"/tmp/spingnn-lammps-$variant-help.txt"
+    else
+        "/opt/spingnn/lammps/$variant/lmp" -h \
+            >"/tmp/spingnn-lammps-$variant-help.txt"
+    fi
+    grep -Eq '(^|[[:space:]])allegro([[:space:]]|$)' "/tmp/spingnn-lammps-$variant-help.txt"
+    grep -q 'spin/allegro_spin' "/tmp/spingnn-lammps-$variant-help.txt"
+    grep -Eq '(^|[[:space:]])bec([[:space:]]|$)' "/tmp/spingnn-lammps-$variant-help.txt"
+    rm -f "/tmp/spingnn-lammps-$variant-help.txt"
+    echo "LAMMPS_FEATURES_OK variant=$variant"
+done

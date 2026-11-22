@@ -1,0 +1,9 @@
+units metal
+atom_style spin
+region box block 0 2 0 2 0 2
+create_box 3 box
+
+pair_style spin/allegro_spin
+pair_coeff * * ${model} Li Nb O
+run 0
+

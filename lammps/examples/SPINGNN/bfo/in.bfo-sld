@@ -1,0 +1,223 @@
+# ===============================
+# LAMMPS Input for BFO SLD
+# Phasechange-style cooling from 1001 K to 1 K in 50 K steps
+# with G-type AFM order-parameter collection
+#
+# Required local inputs: BFO.data and spin-model.pth
+# ===============================
+
+#######################################
+# Variables
+#######################################
+variable        t_cool       equal 8.0       # cooling time per temperature step, ps
+variable        t_eq         equal 4.0       # equilibration time at each temperature, ps
+variable        t_collect    equal 30.0      # collection time at each temperature, ps
+
+#######################################
+# Initialization
+#######################################
+dimension       3
+boundary        p p p
+units           metal
+atom_style      spin
+processors      * * * grid numa
+newton          on
+atom_modify     map array
+
+#######################################
+# System definition
+#######################################
+read_data BFO.data
+
+# G-type AFM sublattices for the 80-atom BFO.data cell.
+# Defined before replicate, following the phasechange input-file pattern.
+group g_minus id 1 2 3 4 5 6 7 8
+group g_plus  id 9 10 11 12 13 14 15 16
+
+# Supercell for SLD. Adjust these factors if a larger cell is needed.
+replicate 2 4 2
+
+group mag_atom type 1          # 1=Fe
+group non_mag_atom type 2 3    # 2=Bi 3=O
+
+mass 1 55.85     # Fe
+mass 2 208.98    # Bi
+mass 3 16.00     # O
+
+#######################################
+# Annealing controls
+#######################################
+variable Tinit  equal 1001      # initial temperature, K
+variable Tend   equal 1         # final temperature, K
+variable Tstep  equal 50        # cooling interval, K
+variable dt     equal 0.0005    # timestep, ps
+
+variable Tdamp_lattice equal $(100*dt)
+variable Tdamp_P       equal $(1000*dt)
+variable Tdamp_spin    equal 0.4
+variable P             equal 0.0
+
+# Thermodynamic constants for the NPT enthalpy-fluctuation heat capacity.
+# In metal units: energy=eV, pressure=bar, volume=Angstrom^3.
+variable kB            equal 8.617333262145e-5
+variable barA3_to_eV   equal 6.241509074e-7
+
+variable Nstep_eq      equal round(${t_eq}/${dt})
+variable Nstep_collect equal round(${t_collect}/${dt})
+variable Nstep_cool    equal round(${t_cool}/${dt})
+variable dump_step     equal 50
+variable thermo_step   equal 10
+
+
+#######################################
+# Potential
+#######################################
+pair_style spin/allegro_spin
+pair_coeff * * spin-model.pth Fe Bi O
+
+#######################################
+# Simulation settings
+#######################################
+timestep ${dt}
+neighbor 0.01 bin
+neigh_modify every 1 delay 0 check no
+run_style verlet
+
+velocity all create ${Tinit} 12345 dist gaussian
+
+#######################################
+# Computes and order parameters
+#######################################
+compute outsp mag_atom property/atom spx spy spz
+compute out_mag mag_atom spin
+compute out_gplus  g_plus  spin
+compute out_gminus g_minus spin
+
+variable magx      equal c_out_mag[1]
+variable magy      equal c_out_mag[2]
+variable magz      equal c_out_mag[3]
+variable magnorm   equal c_out_mag[4]
+variable temp_mag  equal c_out_mag[6]
+
+# G-type AFM order parameter L_G = (M_plus - M_minus)/2.
+# The sign is arbitrary; use v_lgnorm for the scalar order parameter.
+variable lgx       equal (c_out_gplus[1]-c_out_gminus[1])/2
+variable lgy       equal (c_out_gplus[2]-c_out_gminus[2])/2
+variable lgz       equal (c_out_gplus[3]-c_out_gminus[3])/2
+variable lgnorm    equal sqrt(v_lgx*v_lgx+v_lgy*v_lgy+v_lgz*v_lgz)
+
+variable etotal2   equal etotal*etotal
+variable myetotal  equal etotal
+variable myenthalpy equal etotal+v_P*vol*v_barA3_to_eV
+variable mytemp    equal temp
+variable mype      equal pe
+variable myvol     equal vol
+variable mylx      equal lx
+variable myly      equal ly
+variable mylz      equal lz
+
+#######################################
+# Thermo
+#######################################
+thermo ${thermo_step}
+thermo_style custom step time temp vol lx ly lz v_temp_mag v_magnorm v_magx v_magy v_magz v_lgx v_lgy v_lgz v_lgnorm pe etotal
+
+#######################################
+# Warmup at 1001 K, following inphasechange.lmp
+#######################################
+shell mkdir -p log dump restart ave
+
+fix 10 non_mag_atom setforce/spin 0.0 0.0 0.0
+fix 11 all spin/sib_npt temp ${Tinit} ${Tinit} ${Tdamp_lattice} alpha ${Tdamp_spin} seed 12345 aniso ${P} ${P} ${Tdamp_P}
+
+log ./log/warmup-${Tinit}.log
+write_restart ./restart/warmup-${Tinit}.restart
+dump 1 all custom ${dump_step} ./dump/warmup-${Tinit}.lammpstrj id type element x y z c_outsp[1] c_outsp[2] c_outsp[3]
+dump_modify 1 element Fe Bi O
+run 1
+run 100
+unfix 10
+unfix 11
+undump 1
+reset_timestep 0
+
+#######################################
+# Stepwise cooling loop: 1001 -> 951 -> ... -> 1 K
+#######################################
+variable Tcurr equal ${Tinit}
+label loop
+variable Tstart equal ${Tcurr}
+variable Tcurr equal ${Tcurr}-${Tstep}
+if "${Tcurr} < ${Tend}" then "jump SELF break"
+
+print "-----------------------------------------"
+print "Set system temperature to ${Tcurr} K"
+print "-----------------------------------------"
+
+thermo_style custom step time temp vol lx ly lz v_temp_mag v_magnorm v_magx v_magy v_magz v_lgx v_lgy v_lgz v_lgnorm pe etotal
+
+fix 10 non_mag_atom setforce/spin 0.0 0.0 0.0
+
+# Cooling segment
+fix 11 all spin/sib_npt temp ${Tstart} ${Tcurr} ${Tdamp_lattice} alpha ${Tdamp_spin} seed 12345 aniso ${P} ${P} ${Tdamp_P}
+log ./log/cool-${Tcurr}.log
+dump 1 all custom ${dump_step} ./dump/cool-${Tcurr}.lammpstrj id type element x y z c_outsp[1] c_outsp[2] c_outsp[3]
+dump_modify 1 element Fe Bi O
+run ${Nstep_cool}
+write_restart ./restart/cool-${Tcurr}.restart
+unfix 11
+undump 1
+
+# Equilibration at current temperature
+fix 11 all spin/sib_npt temp ${Tcurr} ${Tcurr} ${Tdamp_lattice} alpha ${Tdamp_spin} seed 12345 aniso ${P} ${P} ${Tdamp_P}
+log ./log/eq-${Tcurr}.log
+dump 1 all custom ${dump_step} ./dump/eq-${Tcurr}.lammpstrj id type element x y z c_outsp[1] c_outsp[2] c_outsp[3]
+dump_modify 1 element Fe Bi O
+run ${Nstep_eq}
+write_restart ./restart/eq-${Tcurr}.restart
+undump 1
+
+# Collection and running averages
+reset_timestep 0
+
+# Refresh thermo quantities after write_restart/reset_timestep without
+# advancing the trajectory, so the reference enthalpy can be evaluated.
+run 0
+
+# Cp is obtained from NPT enthalpy fluctuations:
+#   Cp       = (<H^2>-<H>^2)/(kB*T^2)       [eV/K]
+#   Cp/kB    = (<H^2>-<H>^2)/(kB^2*T^2)     [dimensionless]
+#   H        = Etotal + Pexternal*V
+# The reference shift leaves the variance unchanged and avoids subtracting
+# two large, nearly equal numbers at the lowest temperatures.
+variable Href equal $(v_myenthalpy)
+variable dH   equal v_myenthalpy-v_Href
+variable dH2  equal v_dH*v_dH
+
+# The original 16 averaged columns are retained unchanged.  The shifted
+# enthalpy moments <dH^2> and <dH> are appended as columns 17 and 18.
+fix avetime all ave/time 1 ${thermo_step} ${thermo_step} v_etotal2 v_myetotal v_mytemp v_myvol v_mylx v_myly v_mylz v_temp_mag v_magnorm v_magx v_magy v_magz v_lgx v_lgy v_lgz v_lgnorm v_dH2 v_dH ave running file ./ave/ave-${Tcurr}.log
+
+variable Hvar       equal f_avetime[17]-f_avetime[18]*f_avetime[18]
+variable Cp_eV_K    equal v_Hvar/(v_kB*v_Tcurr*v_Tcurr)
+variable Cp_kB      equal v_Hvar/(v_kB*v_kB*v_Tcurr*v_Tcurr)
+variable Cp_atom_kB equal v_Cp_kB/count(all)
+
+thermo_style custom step time temp vol lx ly lz v_temp_mag v_magnorm v_magx v_magy v_magz v_lgx v_lgy v_lgz v_lgnorm pe etotal v_Hvar v_Cp_eV_K v_Cp_kB v_Cp_atom_kB
+
+log ./log/collect-${Tcurr}.log
+dump 1 all custom ${dump_step} ./dump/collect-${Tcurr}.lammpstrj id type element x y z c_outsp[1] c_outsp[2] c_outsp[3]
+dump_modify 1 element Fe Bi O
+run ${Nstep_collect}
+unfix avetime
+undump 1
+unfix 11
+reset_timestep 0
+
+unfix 10
+jump SELF loop
+
+label break
+print "-----------------------------------------"
+print "Finished cooling schedule down to ${Tend} K"
+print "-----------------------------------------"

@@ -1,0 +1,228 @@
+# ================================================================
+# BFO only-spin phase-transition simulation
+#
+# The simulation cell and all atomic coordinates are frozen.  Only Fe
+# spins are integrated.  Heat-capacity data are collected from potential-
+# energy fluctuations at fixed structure, not from LAMMPS etotal.
+#
+# Run this file from the directory containing BFO.data and
+# spin-model.pth, for example:
+#   mpirun -np <N> lmp -in in.bfo-spin-only
+# ================================================================
+
+#######################################
+# Sampling schedule
+#######################################
+variable        t_cool       equal 8.0       # relaxation after each T step, ps
+variable        t_eq         equal 4.0       # equilibration before sampling, ps
+variable        t_collect    equal 30.0      # production sampling at each T, ps
+
+#######################################
+# Initialization
+#######################################
+dimension       3
+boundary        p p p
+units           metal
+atom_style      spin
+processors      * * * grid numa
+newton          on
+atom_modify     map array
+
+#######################################
+# System definition
+#######################################
+read_data       BFO.data
+
+# G-type AFM sublattices in the original 80-atom BFO.data cell.
+# Defining them before replicate propagates the group membership.
+group           g_minus id 1 2 3 4 5 6 7 8
+group           g_plus  id 9 10 11 12 13 14 15 16
+
+replicate       2 4 2
+
+group           mag_atom     type 1          # Fe
+group           non_mag_atom type 2 3        # Bi and O
+
+mass            1 55.85
+mass            2 208.98
+mass            3 16.00
+
+#######################################
+# Temperature controls
+#######################################
+variable        Tinit        equal 1001
+variable        Tend         equal 1
+variable        Tstep        equal 50
+variable        dt           equal 0.00025
+variable        Tdamp_spin   equal 0.4
+
+# Current target temperature of the spin thermostat.  This is the physical
+# temperature axis for the only-spin run.  LAMMPS temp is also printed below,
+# but it is an atomic kinetic temperature and should remain zero when the
+# lattice is frozen.
+variable        Tset         equal ${Tinit}
+
+variable        Nstep_eq      equal round(${t_eq}/${dt})
+variable        Nstep_collect equal round(${t_collect}/${dt})
+variable        Nstep_cool    equal round(${t_cool}/${dt})
+variable        dump_step     equal 50
+variable        sample_step   equal 10
+
+#######################################
+# Potential
+#######################################
+pair_style      spin/allegro_spin
+pair_coeff      * * spin-model.pth Fe Bi O
+
+#######################################
+# Integration settings
+#######################################
+timestep        ${dt}
+neighbor        0.01 bin
+neigh_modify    every 1 delay 0 check no
+run_style       verlet
+
+# No velocity command and no atomic thermostat/barostat are used.
+# Atomic positions and the simulation cell remain at their BFO.data values.
+
+#######################################
+# Spin observables
+#######################################
+compute         outsp     mag_atom property/atom spx spy spz
+compute         out_mag   mag_atom spin
+compute         out_gplus g_plus  spin
+compute         out_gminus g_minus spin
+
+variable        magx       equal c_out_mag[1]
+variable        magy       equal c_out_mag[2]
+variable        magz       equal c_out_mag[3]
+variable        magnorm    equal c_out_mag[4]
+# c_out_mag[5] only sums pair-style atomic energies on sites with a nonzero
+# spin.  Keep it as a diagnostic, but use the full model PE for C_spin.  At
+# frozen x and box, every fluctuation of PE is caused by the spin variables;
+# the constant structural-energy offset cancels exactly in Var(PE).
+variable        emag_site  equal c_out_mag[5]
+variable        espin      equal pe
+variable        espin2     equal pe*pe
+variable        temp_mag   equal c_out_mag[6]
+
+# G-type AFM order parameter L_G = (M_plus-M_minus)/2.
+variable        lgx        equal (c_out_gplus[1]-c_out_gminus[1])/2
+variable        lgy        equal (c_out_gplus[2]-c_out_gminus[2])/2
+variable        lgz        equal (c_out_gplus[3]-c_out_gminus[3])/2
+variable        lgnorm     equal sqrt(v_lgx*v_lgx+v_lgy*v_lgy+v_lgz*v_lgz)
+
+# units metal: energy=eV and k_B=eV/K.
+variable        kb         equal 8.617333262145e-5
+variable        Nspin      equal count(mag_atom)
+
+#######################################
+# Output directories and thermo
+#######################################
+shell           mkdir -p onlyspin_log onlyspin_dump onlyspin_restart onlyspin_ave
+
+thermo          ${sample_step}
+# Keep pe explicitly in thermo_style.  Variables v_espin/v_espin2 depend on
+# the thermo keyword pe, and LAMMPS must know that PE is needed at run init.
+thermo_style    custom step time temp v_Tset v_temp_mag lx ly lz pe v_espin v_emag_site v_magnorm v_lgx v_lgy v_lgz v_lgnorm
+
+# Keep non-magnetic sites from receiving/integrating any spin force.
+fix             freeze_nonmag non_mag_atom setforce/spin 0.0 0.0 0.0
+
+#######################################
+# Initial high-temperature spin equilibration
+#######################################
+fix             spinbath all spin/sib ${Tinit} ${Tdamp_spin} 13346 lattice frozen
+log             ./onlyspin_log/warmup-${Tinit}.log
+dump            traj all custom ${dump_step} ./onlyspin_dump/warmup-${Tinit}.lammpstrj id type element x y z c_outsp[1] c_outsp[2] c_outsp[3]
+dump_modify     traj element Fe Bi O
+run             ${Nstep_eq}
+write_restart   ./onlyspin_restart/warmup-${Tinit}.restart
+undump          traj
+unfix           spinbath
+reset_timestep  0
+
+#######################################
+# Stepwise cooling: 1001 -> 951 -> ... -> 1 K
+#######################################
+variable        Tcurr equal ${Tinit}
+
+label           loop
+variable        Tcurr equal ${Tcurr}-${Tstep}
+if              "${Tcurr} < ${Tend}" then "jump SELF break"
+
+# Update the temperature column written to cool/eq/collect logs.
+variable        Tset equal ${Tcurr}
+
+# Restore the non-collection thermo output at the beginning of every
+# temperature point.  The collection thermo_style below references
+# f_moments; that fix is removed after collection and must not be evaluated
+# during the next cooling/equilibration segment.
+thermo_style    custom step time temp v_Tset v_temp_mag lx ly lz pe v_espin v_emag_site v_magnorm v_lgx v_lgy v_lgz v_lgnorm
+
+print           "--------------------------------------------------"
+print           "Only-spin simulation at target T = ${Tcurr} K"
+print           "--------------------------------------------------"
+
+# A different deterministic seed is used at each target temperature.
+variable        spinseed equal round(20000+${Tcurr})
+
+# lattice frozen is essential: spin/sib does not update x, v, or the box.
+# The same fix is kept through relaxation, equilibration, and collection so
+# its stochastic sequence remains continuous within this temperature point.
+fix             spinbath all spin/sib ${Tcurr} ${Tdamp_spin} ${spinseed} lattice frozen
+
+# Relax spins after the discrete temperature change.
+log             ./onlyspin_log/cool-${Tcurr}.log
+dump            traj all custom ${dump_step} ./onlyspin_dump/cool-${Tcurr}.lammpstrj id type element x y z c_outsp[1] c_outsp[2] c_outsp[3]
+dump_modify     traj element Fe Bi O
+run             ${Nstep_cool}
+write_restart   ./onlyspin_restart/cool-${Tcurr}.restart
+undump          traj
+
+# Equilibrate at the target temperature.
+log             ./onlyspin_log/eq-${Tcurr}.log
+dump            traj all custom ${dump_step} ./onlyspin_dump/eq-${Tcurr}.lammpstrj id type element x y z c_outsp[1] c_outsp[2] c_outsp[3]
+dump_modify     traj element Fe Bi O
+run             ${Nstep_eq}
+write_restart   ./onlyspin_restart/eq-${Tcurr}.restart
+undump          traj
+
+#######################################
+# Production collection
+#######################################
+reset_timestep  0
+
+# samples writes the magnetic-energy time series needed for robust offline
+# error bars, autocorrelation checks, and alternative equilibration cuts.
+fix             samples all ave/time ${sample_step} 1 ${sample_step} v_espin v_espin2 v_emag_site v_temp_mag v_magnorm v_lgx v_lgy v_lgz v_lgnorm ave one file ./onlyspin_ave/samples-${Tcurr}.dat
+
+# moments maintains running <E_mag^2> and <E_mag>.  The raw fluctuation and
+# normalized magnetic heat capacity are reported in the collect thermo log:
+#   C_spin/(N_spin*k_B) = Var(E_mag)/(N_spin*k_B^2*T^2)
+fix             moments all ave/time ${sample_step} 1 ${sample_step} v_espin2 v_espin ave running file ./onlyspin_ave/moments-${Tcurr}.dat
+variable        Cspin_raw equal f_moments[1]-f_moments[2]*f_moments[2]
+variable        Cspin_kB  equal v_Cspin_raw/(v_Nspin*v_kb*v_kb*${Tcurr}*${Tcurr})
+
+thermo_style    custom step time temp v_Tset v_temp_mag lx ly lz pe v_espin v_emag_site v_magnorm v_lgx v_lgy v_lgz v_lgnorm v_Cspin_raw v_Cspin_kB
+log             ./onlyspin_log/collect-${Tcurr}.log
+dump            traj all custom ${dump_step} ./onlyspin_dump/collect-${Tcurr}.lammpstrj id type element x y z c_outsp[1] c_outsp[2] c_outsp[3]
+dump_modify     traj element Fe Bi O
+run             ${Nstep_collect}
+write_restart   ./onlyspin_restart/collect-${Tcurr}.restart
+
+# Stop thermo from referencing f_moments before deleting that fix.
+thermo_style    custom step time temp v_Tset v_temp_mag lx ly lz pe v_espin v_emag_site v_magnorm v_lgx v_lgy v_lgz v_lgnorm
+unfix           samples
+unfix           moments
+undump          traj
+unfix           spinbath
+reset_timestep  0
+
+jump            SELF loop
+
+label           break
+unfix           freeze_nonmag
+print           "--------------------------------------------------"
+print           "Finished BFO only-spin cooling schedule; last sampled T = ${Tend} K"
+print           "--------------------------------------------------"

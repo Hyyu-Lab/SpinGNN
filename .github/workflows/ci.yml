@@ -1,0 +1,316 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 0"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  inventory:
+    name: Test inventory
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - id: matrix
+        run: |
+          matrix=$(python tools/ci/test_inventory.py --matrix)
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install lint tools
+        run: python -m pip install black==22.3.0 flake8==7.1.1
+      - name: black --check
+        run: >
+          black --check
+          _spingnn_source.py conftest.py tools/ci/source_python.py
+          tools/ci/test_inventory.py tools/ci/pytest_evidence.py
+          tests_ci
+          tools/ci/process_thp.py
+          tools/ci/e2ip_training_smoke.py tools/e2slp/evaluate.py
+          example/validate_configs.py
+          tools/ci/gpu_runtime_gate.py tools/ci/gpu_pt2_threeway.py
+          src/core/nequip src/core/tests
+          src/models/allegro src/models/tests
+          tests_lammps
+      - name: flake8 (full configured ruleset)
+        run: >
+          flake8 --config=src/core/.flake8 --count
+          _spingnn_source.py conftest.py tools/ci/source_python.py
+          tools/ci/test_inventory.py tools/ci/pytest_evidence.py
+          tests_ci
+          tools/ci/process_thp.py
+          tools/ci/e2ip_training_smoke.py tools/e2slp/evaluate.py
+          example/validate_configs.py
+          tools/ci/gpu_runtime_gate.py tools/ci/gpu_pt2_threeway.py
+          src/core/nequip src/core/tests
+          src/models/allegro src/models/tests
+          tests_lammps
+      - name: Check shell syntax
+        run: |
+          for script in tools/ci/*.sh tools/lammps/build_lammps.sh; do
+            bash -n "$script"
+          done
+
+  test-python:
+    name: Python tests (${{ matrix.suite }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    needs: inventory
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.inventory.outputs.matrix) }}
+    env:
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      PYTHONHASHSEED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: tools/ci/constraints-ci.txt
+      - name: Install CPU environment
+        if: matrix.environment == 'cpu'
+        run: tools/ci/install_cpu_env.sh
+      - name: Install control-plane test dependency
+        if: matrix.environment == 'control'
+        run: python -m pip install pytest==9.1.1
+      - name: Run pytest
+        run: |
+          workers=()
+          if [ "${{ matrix.xdist }}" != "0" ]; then
+            workers=(-n "${{ matrix.xdist }}" --dist loadscope)
+          fi
+          python tools/ci/source_python.py -m pytest ${{ matrix.tests }} -q \
+            -m "${{ matrix.markers }}" -p no:cacheprovider -p pytest_evidence \
+            --evidence-json "test-results/${{ matrix.suite }}.json" \
+            --junitxml="test-results/${{ matrix.suite }}.xml" --require-test-passes=1 \
+            --durations=30 "${workers[@]}"
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-${{ matrix.suite }}
+          path: test-results/
+
+  e2ip-examples:
+    name: Public examples and e2IP training
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      PYTHONHASHSEED: "0"
+      NEQUIP_NUM_TASKS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: tools/ci/constraints-ci.txt
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.22"
+      - name: Install CPU environment
+        run: tools/ci/install_cpu_env.sh
+      - name: Validate every public example
+        run: uv run --no-project --no-python-downloads --python python tools/ci/source_python.py example/validate_configs.py
+      - name: Train and reload all evidential targets
+        run: >
+          uv run --no-project --no-python-downloads --python python
+          tools/ci/source_python.py tools/ci/e2ip_training_smoke.py
+          --device cpu --epochs 10 --output test-results/e2ip-training
+      - name: Preserve training evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2ip-training
+          path: test-results/
+
+  test-python-slow:
+    name: Python slow tests (${{ matrix.package }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: nequip
+            tests: src/core/tests/unit
+          - package: allegro
+            tests: src/models/tests
+    env:
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      PYTHONHASHSEED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: tools/ci/constraints-ci.txt
+      - name: Install CPU environment
+        run: tools/ci/install_cpu_env.sh
+      - name: Run slow Python contracts
+        run: >
+          python tools/ci/source_python.py -m pytest ${{ matrix.tests }} -q -ra
+          -m "slow and not gpu and not lammps and not mpi"
+          -p no:cacheprovider -p pytest_evidence
+          --evidence-json=test-results/slow-${{ matrix.package }}.json
+          --junitxml=test-results/slow-${{ matrix.package }}.xml
+          --require-test-passes=1
+      - name: Preserve slow test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-slow-${{ matrix.package }}
+          path: test-results/
+
+  build-test-lammps:
+    name: LAMMPS tests (${{ matrix.mode }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: serial
+            markers: lammps and not mpi and not gpu and not slow
+          - mode: mpi
+            markers: mpi and not gpu and not slow
+    env:
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      PYTHONHASHSEED: "0"
+      CCACHE_DIR: /home/runner/.ccache
+      CCACHE_MAXSIZE: 800M
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: tools/ci/constraints-ci.txt
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+          if [ "${{ matrix.mode }}" = "mpi" ]; then
+            sudo apt-get install -y openmpi-bin libopenmpi-dev
+          fi
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ccache
+          key: ccache-lammps-${{ matrix.mode }}-${{ hashFiles('lammps/src/**', 'lammps/cmake/**', 'tools/lammps/build_lammps.sh') }}
+          restore-keys: ccache-lammps-${{ matrix.mode }}-
+      - name: Install CPU environment
+        run: |
+          tools/ci/install_cpu_env.sh
+          # torch's cmake config references MKL headers at configure time.
+          python -m pip install mkl-include
+      - name: Build LAMMPS (serial baseline)
+        run: tools/lammps/build_lammps.sh serial
+      - name: Build LAMMPS (MPI)
+        if: matrix.mode == 'mpi'
+        run: tools/lammps/build_lammps.sh mpi
+      - name: ccache stats
+        run: ccache -s | head -20
+      - name: Run LAMMPS parity tests
+        env:
+          SPINGNN_REQUIRE_LAMMPS: "1"
+          SPINGNN_LAMMPS_BIN: ${{ github.workspace }}/build/lammps-serial/lmp
+          SPINGNN_LAMMPS_MPI_BIN: ${{ github.workspace }}/build/lammps-mpi/lmp
+        run: >
+          python tools/ci/source_python.py -m pytest tests_lammps -q -ra
+          -m "${{ matrix.markers }}"
+          -p no:cacheprovider -p pytest_evidence
+          --evidence-json=test-results/${{ matrix.mode }}-parity.json
+          --junitxml=test-results/${{ matrix.mode }}-parity.xml --require-test-passes=1
+      # The end-to-end chains (dataset -> nequip-train -> nequip-deploy ->
+      # LAMMPS parity; Allegro nosoc/soc/bec) are marked `slow`, so the marker
+      # lanes above exclude them. Run them explicitly on the serial leg, which
+      # has the serial binary and the CPU training environment.
+      - name: Run end-to-end train/deploy/LAMMPS test
+        if: matrix.mode == 'serial'
+        env:
+          SPINGNN_REQUIRE_LAMMPS: "1"
+          SPINGNN_LAMMPS_BIN: ${{ github.workspace }}/build/lammps-serial/lmp
+        run: >
+          python tools/ci/source_python.py -m pytest tests_lammps/test_e2e_train_lammps.py -q -ra
+          -p no:cacheprovider -p pytest_evidence
+          --evidence-json=test-results/e2e.json --junitxml=test-results/e2e.xml
+          --require-test-passes=1
+      - name: Run slow PT2 contracts
+        if: matrix.mode == 'serial' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        env:
+          SPINGNN_REQUIRE_LAMMPS: "1"
+          SPINGNN_LAMMPS_BIN: ${{ github.workspace }}/build/lammps-serial/lmp
+        run: >
+          python tools/ci/source_python.py -m pytest tests_lammps/test_pt2_parity.py
+          -q -ra -m "slow and not gpu and not mpi" -p no:cacheprovider
+          -p pytest_evidence --evidence-json test-results/slow-pt2.json
+          --junitxml=test-results/slow-pt2.xml --require-test-passes=1
+      # test_ci_contracts.py locks the CI fail-closed invariants themselves
+      # (JUnit minima, probe export contract, MPI probe transport selection).
+      # The binary probes need both LAMMPS builds and libopenmpi-dev, so
+      # run the module explicitly on the MPI leg.
+      - name: Run CI contract tests
+        if: matrix.mode == 'mpi'
+        env:
+          SPINGNN_REQUIRE_LAMMPS: "1"
+          SPINGNN_LAMMPS_BIN: ${{ github.workspace }}/build/lammps-serial/lmp
+          SPINGNN_LAMMPS_MPI_BIN: ${{ github.workspace }}/build/lammps-mpi/lmp
+        run: >
+          python tools/ci/source_python.py -m pytest tests_lammps/test_ci_contracts.py tests_lammps/test_source_exact.py -q -ra
+          -p no:cacheprovider -p pytest_evidence
+          --evidence-json=test-results/ci-contracts.json --junitxml=test-results/ci-contracts.xml
+          --require-test-passes=1
+      - name: Preserve deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lammps-${{ matrix.mode }}
+          path: test-results/
+          if-no-files-found: ignore
+
+  pass:
+    name: CI pass
+    if: always()
+    needs: [inventory, lint, test-python, e2ip-examples, test-python-slow, build-test-lammps]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
+          allowed-skips: ${{ (github.event_name != 'schedule' && github.event_name != 'workflow_dispatch') && 'test-python-slow' || '' }}

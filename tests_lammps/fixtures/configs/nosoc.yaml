@@ -1,0 +1,30 @@
+model_builders:
+  - allegro.model.Allegro_nosoc
+  - ParaStressForceSpinOutput
+r_max: 4.0
+chemical_symbol_to_type:
+  Mn: 0
+  Ge: 1
+avg_num_neighbors: 5.0
+default_dtype: float32
+allow_tf32: false
+l_max: 1
+parity: o3_full
+lhb: false
+lbiquadratic: false
+lnosoc_layer: true
+lte3nn: false
+ene_coeff_trainable: false
+allegro_onlyr_num_layers: 1
+allegro_nosoc_num_layers: 1
+env_embed_multiplicity: 8
+two_body_latent_mlp_latent_dimensions: [16]
+latent_mlp_latent_dimensions: [16]
+env_embed_mlp_latent_dimensions: []
+edge_onlyr_eng_mlp_latent_dimensions: [8]
+edge_eng_nosoc_mlp_latent_dimensions: [8]
+BesselBasis_num_basis: 4
+BesselBasis_trainable: false
+PolynomialCutoff_p: 6
+embed_initial_edge: true
+

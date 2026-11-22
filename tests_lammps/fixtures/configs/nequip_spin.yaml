@@ -1,0 +1,26 @@
+model_builders:
+  - SimpleIrrepsConfig
+  - EnergyModel
+  - ParaStressForceSpinOutput
+r_max: 4.0
+chemical_symbol_to_type:
+  Mn: 0
+  Ge: 1
+avg_num_neighbors: 5.0
+default_dtype: float32
+allow_tf32: false
+num_layers: 1
+l_max: 1
+parity: true
+num_features: 8
+num_basis: 4
+BesselBasis_trainable: false
+PolynomialCutoff_p: 6
+invariant_layers: 1
+invariant_neurons: 16
+use_sc: true
+include_spin: true
+time_reversal: true
+soc: true
+nonlinearity_type: norm
+

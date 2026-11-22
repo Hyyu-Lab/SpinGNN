@@ -1,0 +1,11 @@
+units metal
+boundary p p p
+atom_style spin
+atom_modify map array
+newton on
+read_data ${data}
+
+pair_style spin/allegro_spin
+pair_coeff * * ${model} Mn Ge
+run 0
+

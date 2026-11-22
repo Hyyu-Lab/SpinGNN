@@ -1,0 +1,216 @@
+# This file serves as a fast setting input file for Allegro.
+# Usually, you can only adjust tags in Important part
+run_name: base
+# VERY IMPORTANT. Try different setting below
+batch_size: 1
+
+# Network
+ljmatrix: true # whether to use J matrix model including Heisenberg, DM and Kitaev. Always true for magnetic system.
+lani: true # # whether to use ani matrix model including ANI. Always true for magnetic system.
+lbiquadratic: true # whether to use biquadratic model. True for magnetic system with complex high-order spin interaction.
+lsoc_layer: true # whether to use soc layer. True for magnetic system with complex high-order spin interaction.
+
+ldelta_learning: false # Set true only when the dataset contains energy_fix_spin.
+lpredict_spin_length: false # Set true only when the dataset contains spin_length.
+node_spin_length_mlp_latent_dimensions: [128, 128, 128, 64] # latent dimensions for spin length mlp
+
+ledge_cutoff: false # Add envelope cutoff to edge energy
+
+l_max: 2 # 1 or 2
+spharm_soc_on_l_max: 1 # 1 may enough for soc layer
+# shared allegro part for Eij(r), Jij(r) and Eij(r,s)
+env_embed_multiplicity: 16 # 4 or 8 or 16
+two_body_latent_mlp_latent_dimensions: [128, 128, 256, 256]
+latent_mlp_latent_dimensions: [256, 256, 256]
+# allegro_onlyr part for Eij(r) and Jij(r)
+# allegro_soc_on for Eij(r,s). Default: shared part
+allegro_onlyr_num_layers: 1 # 1 or 2
+allegro_soc_on_num_layers: 1 # 1 or 2
+PolynomialCutoff_p: 48
+
+edge_onlyr_eng_mlp_latent_dimensions: [128, 128, 128, 64]
+edge_biquad_coeff_mlp_latent_dimensions: [128, 128, 128, 64]
+edge_eng_soc_on_mlp_latent_dimensions: [128, 128, 128, 64] # [128, 128, 128, 64]: for lpredict_spin_length: true, [64] for false
+
+# E = edge_onlyr_eng_coeff * Eij(r) + edge_hb_eng_coeff * siXJij(r)Xsj + edge_eng_soc_on_coeff * Eij(r,s)
+ene_coeff_trainable: false
+edge_onlyr_eng_coeff: 1.0
+edge_jmatrix_eng_coeff: 0.1
+edge_ani_eng_coeff: 0.01
+edge_biquad_eng_coeff: 0.1
+edge_eng_soc_on_coeff: 0.01
+
+# IMPORTANT: set it init. No change afterwards usually
+# r_max should consider enough spin-spin interaction. At least to second neighbor of spin in usual.
+r_max: 8.0 # suggest 5.0 ~ 7.0
+allow_tf32: false # Turn on for A100 but off for V100
+root: results/spin_soc
+wandb_project: spin_soc
+
+# Data 3012, left 162 for test
+n_train: 2700
+n_val: 150
+dataset_file_name: spin_data.extxyz
+chemical_symbol_to_type:
+  Cr: 0
+  I: 1
+
+# Train
+learning_rate: 0.002
+
+lr_scheduler_name: ReduceLROnPlateau
+lr_scheduler_patience: 10
+lr_scheduler_factor: 0.5
+
+early_stopping_lower_bounds:
+  LR: 1.0e-5
+
+early_stopping_patiences:
+  validation_loss_awl: 30
+
+lauto_loss: true
+# If turn on auto_loss, suggest to replace all validation_loss with validation_loss_awl
+metrics_key: validation_loss_awl
+
+loss_coeffs:
+  stress: 1.
+  forces: 1.
+  # OSZICAR λ·MW 只有垂直分量；监督 spin_forces_vert，该输出由
+  # spin_fv_coeff 缩放，不能当作完整 spin_forces。
+  spin_forces_vert: 1.
+  total_energy:
+    - 1.
+    - PerAtomMSELoss
+
+symmetry: u2 #u2 or o3 or su2 or o3_full or o3_restricted or so3
+
+# train_spin_ladder part
+train_spin_ladder: false
+
+learning_rate_fine_tune: 0.0005 # Used for fine-tune state 2 and 4
+
+lr_scheduler_ladder_name: ReduceLROnPlateau
+lr_scheduler_ladder_patience: 4
+lr_scheduler_ladder_factor: 0.2
+
+early_stopping_ladder_lower_bounds:
+  LR: 1.0e-5
+early_stopping_ladder_patiences:
+  validation_loss_awl: 10
+# End train_spin_ladder part
+
+# Not so important setting. Keep them as default.
+# general
+append: false
+dataloader_num_workers: 4
+seed: 123456
+dataset_seed: 123456
+default_dtype: float32
+
+# -- network --
+
+model_builders:
+  - allegro.model.Allegro_soc
+  - PerSpeciesRescale
+  - ParaStressForceSpinOutput
+  - RescaleEnergyEtc
+
+avg_num_neighbors: auto
+BesselBasis_num_basis: 8
+BesselBasis_trainable: false
+
+# - start allegro layers -
+# number of tensor product layers, 1-3 usually best, more is more accurate but slower
+embed_initial_edge: true
+two_body_latent_mlp_nonlinearity: silu
+two_body_latent_mlp_initialization: uniform
+latent_mlp_nonlinearity: silu
+latent_mlp_initialization: uniform
+latent_resnet: true
+env_embed_mlp_latent_dimensions: []
+env_embed_mlp_nonlinearity: null
+env_embed_mlp_initialization: uniform
+# - end allegro layers -
+
+edge_onlyr_eng_mlp_nonlinearity: silu
+edge_onlyr_eng_mlp_initialization: uniform
+edge_biquad_coeff_mlp_nonlinearity: silu
+edge_biquad_coeff_mlp_initialization: uniform
+
+edge_eng_soc_on_mlp_nonlinearity: null
+edge_eng_soc_on_initialization: uniform
+
+# -- data --
+dataset: ase
+ase_args:
+  format: extxyz
+
+# logging
+wandb: false
+verbose: info
+
+max_epochs: 10000000
+train_val_split: random
+
+shuffle: true
+
+use_ema: true
+ema_decay: 0.99
+ema_use_num_updates: true
+
+# loss function
+
+# optimizer
+# optimizer_name: Adam
+# optimizer_amsgrad: true
+# optimizer_params:
+#   amsgrad: true #!!!!
+#   betas: !!python/tuple
+#     - 0.9
+#     - 0.999
+#   eps: 1.0e-08
+#   weight_decay: 0.
+
+# SAM can be specified as the optimizer:
+optimizer_name: SAM
+optimizer_SAM_rho: 0.005
+optimizer_SAM_adaptive: false
+optimizer_base_optimizer: !!python/name:torch.optim.adam.Adam ''
+optimizer_amsgrad: true
+
+early_stopping_upper_bounds:
+  cumulative_wall: 604800.
+
+early_stopping_ladder_upper_bounds:
+  cumulative_wall: 604800.
+
+# output metrics
+metrics_components:
+  - - stress
+    - mae
+  - - stress
+    - rmse
+  - - forces # key
+    - mae # "rmse" or "mae"
+  - - forces
+    - rmse
+  - - spin_forces_vert
+    - mae
+  - - spin_forces_vert
+    - rmse
+  - - spin_length
+    - mae
+  - - spin_length
+    - rmse
+  - - total_energy
+    - mae
+    - PerAtom: True # if true, energy is normalized by the number of atoms
+  - - total_energy
+    - rmse
+    - PerAtom: True # if true, energy is normalized by the number of atoms
+  - - energy_fix_spin
+    - mae
+    - PerAtom: True # if true, energy is normalized by the number of atoms
+  - - energy_fix_spin
+    - rmse
+    - PerAtom: True # if true, energy is normalized by the number of atoms

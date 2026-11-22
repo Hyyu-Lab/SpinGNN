@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "inventory": "tools/ci/warnings-inventory.md",
+  "pytest_markers": "not gpu and not lammps and not mpi and not slow",
+  "suites": {
+    "src/core": {
+      "max_warnings": 8489
+    },
+    "src/models": {
+      "max_warnings": 23463
+    }
+  }
+}

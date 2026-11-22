@@ -1,0 +1,46 @@
+# Coupled spin-lattice NVE dynamics with a stochastic spin bath.
+# Recommended model: spin/allegro_spin .pt2 package plus adjacent .pt2.meta.
+# TorchScript .pth remains a supported fallback.
+# Run:
+#   lmp -in in.spin_lattice_md -var model deployed/spin.pt2 \
+#       -var data data.spin8 -var output spin_lattice
+
+variable temperature index 300.0
+variable steps index 1000
+variable thermo_every index 10
+variable dump_every index 10
+variable output index spin_lattice
+
+units metal
+boundary p p p
+atom_style spin
+atom_modify map array
+newton on
+read_data ${data}
+
+pair_style spin/allegro_spin
+pair_coeff * * ${model} Mn Ge
+
+# Initialize velocities, thermostat lattice and spins, then integrate both sectors.
+velocity all create ${temperature} 20260829 mom yes rot no dist gaussian
+fix lattice_bath all langevin ${temperature} ${temperature} 0.1 314159 zero yes
+fix spin_bath all langevin/spin ${temperature} 0.01 481516
+fix integrator all nve/spin lattice moving
+
+neighbor 0.5 bin
+neigh_modify every 1 delay 0 check yes
+timestep 0.0001
+
+compute spin_state all property/atom spx spy spz sp fmx fmy fmz
+thermo ${thermo_every}
+thermo_style custom step temp pe ke etotal press fmax
+thermo_modify lost error flush yes
+dump trajectory all custom ${dump_every} ${output}.lammpstrj &
+  id type x y z vx vy vz fx fy fz &
+  c_spin_state[1] c_spin_state[2] c_spin_state[3] c_spin_state[4] &
+  c_spin_state[5] c_spin_state[6] c_spin_state[7]
+dump_modify trajectory sort id format float %.10g
+restart 1000 ${output}.restart.*
+
+run ${steps}
+write_restart ${output}.restart.final

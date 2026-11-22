@@ -1,0 +1,7 @@
+[flake8]
+ignore = E226, E501, E741, E743, C901, W503, E203
+max-line-length = 127
+exclude = .git,__pycache__,docs/source/conf.py,old,build,dist,examples,tmp
+# This test intentionally sets global dtype/JIT state before importing models.
+per-file-ignores =
+    src/core/tests/unit/model/test_nequip_model_spin.py: E402
