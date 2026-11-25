@@ -8,8 +8,8 @@ import struct
 def _launch_bounds(gpu_arch, *, heavy=False):
     if not gpu_arch:
         return "128, 4"
-    # sm_80/sm_90 have 2048 max threads/SM; sm_86/sm_89/sm_120 have 1536 max threads/SM.
-    # For heavy TP reverse kernels, minBlocks=5 (96 regs/thread) keeps occupancy high with 0 stack spill.
+    # sm_70/sm_80/sm_90 have 2048 max threads/SM; sm_86/sm_89/sm_120 have 1536 max threads/SM.
+    # sm_70 keeps conservative (128, 4) launch bounds; heavy TP reverse on sm_80/90/120 uses (128, 5).
     if heavy:
         return "128, 5" if gpu_arch in ("sm_80", "sm_90", "sm_120") else "128, 4"
     return "128, 6" if gpu_arch in ("sm_80", "sm_90") else "128, 4"
@@ -243,7 +243,7 @@ def _tensor_layer(src, name, layer):
     fw, ew, cw = d1 * mul1, d2 * mul, d3 * mul
     elem_bytes = 4 if src.precision == "float32" else 8
     env_bytes = ew * elem_bytes
-    # Portable smem budget across sm_80/86/89/90/120 (min opt-in is 99 KiB on sm_86/89/120):
+    # Portable smem budget across sm_70/80/86/89/90/120 (min opt-in is 96 KiB on sm_70):
     # <=48 KiB uses static smem; (48, 96] KiB uses dynamic opt-in smem; >96 KiB reads global env.
     use_static_smem = src.cuda and env_bytes <= 48 * 1024
     use_dynamic_smem = src.cuda and 48 * 1024 < env_bytes <= 96 * 1024

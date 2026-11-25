@@ -18,13 +18,14 @@ KOKKOS_HASH = "de8a1a137cf2110d391a21454406f4f5ea367c7610b540a3961f7bf1246b4ff8"
 JSON_VERSION = "3.11.3"
 JSON_HASH = "0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406"
 CUDA_ARCHITECTURES = {
+    "sm70": "VOLTA70",
     "sm80": "AMPERE80",
     "sm86": "AMPERE86",
     "sm89": "ADA89",
     "sm90": "HOPPER90",
     "sm120": "BLACKWELL120",
 }
-ALL_GPU_ARCHES = ("sm80", "sm86", "sm89", "sm90", "sm120")
+ALL_GPU_ARCHES = ("sm70", "sm80", "sm86", "sm89", "sm90", "sm120")
 CLUSTER_GCC = Path("/data/app/gcc/10.5.0")
 CLUSTER_MKL = Path("/data/app/intel/oneapi-2024.2.1/mkl/2024.2")
 CLUSTER_CUDA = Path("/data/app/cuda/12.8")
@@ -151,7 +152,7 @@ def main():
     parser.add_argument("--backend", choices=("cpu", "cuda"))
     parser.add_argument(
         "--arch",
-        help="CUDA arch: sm80|sm86|sm89|sm90|sm120, comma-separated list, or all-gpu",
+        help="CUDA arch: sm70|sm80|sm86|sm89|sm90|sm120, comma-separated list, or all-gpu",
     )
     parser.add_argument("--build-dir", type=Path)
     parser.add_argument(

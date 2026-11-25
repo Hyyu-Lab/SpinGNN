@@ -32,14 +32,14 @@ for a different installation.
 srun -p xiang -c 8 --mem=16G python tools/native/build_native.py --backend cpu
 srun -p xiang -c 16 --mem=32G python tools/native/build_native.py \
     --backend cuda --arch all-gpu --cuda-root /data/app/cuda/12.8
-# Or target a single architecture (sm80|sm86|sm89|sm90|sm120):
+# Or target a single architecture (sm70|sm80|sm86|sm89|sm90|sm120):
 srun -p xiang -c 8 --mem=24G python tools/native/build_native.py \
     --backend cuda --arch sm120 --cuda-root /data/app/cuda/12.8
 ```
 
 OpenMP and CPU BLAS run on the compute node. Compiling CUDA (including
-multi-architecture `all-gpu` fat binaries covering `sm_80`, `sm_86`, `sm_89`,
-`sm_90`, and `sm_120` plus `compute_120` PTX) needs only the toolkit and runs
+multi-architecture `all-gpu` fat binaries covering `sm_70`, `sm_80`, `sm_86`,
+`sm_89`, `sm_90`, and `sm_120` plus `compute_120` PTX) needs only the toolkit and runs
 cleanly on CPU allocations. Execution needs a matching GPU and driver.
 
 The build runs out of tree and prints the shared library path. Default build

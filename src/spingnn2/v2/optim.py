@@ -207,6 +207,17 @@ def _run_ns_stage(
     return cur
 
 
+def _ns_work_dtype(grad_matrix: torch.Tensor) -> torch.dtype:
+    """Select Newton-Schulz working dtype (FP64 preserved; FP32 fallback on pre-Ampere CUDA)."""
+    if grad_matrix.dtype == torch.float64:
+        return torch.float64
+    if grad_matrix.is_cuda:
+        major, _ = torch.cuda.get_device_capability(grad_matrix.device)
+        if major < 8:
+            return torch.float32
+    return torch.bfloat16
+
+
 def newton_schulz(
     grad_matrix: torch.Tensor,
     mode: str = "quintic",
@@ -215,8 +226,9 @@ def newton_schulz(
 ) -> torch.Tensor:
     """Newton-Schulz iteration toward the polar factor of ``grad_matrix`` (last 2 dims).
 
-    Runs in ``bfloat16`` for FP32/BF16 tensors (hardware Tensor Core fast path)
-    and preserves ``float64`` for double-precision tensors.
+    Runs in ``bfloat16`` for FP32/BF16 tensors on CPU and Ampere+ CUDA (hardware
+    Tensor Core fast path), falls back to ``float32`` on pre-Ampere CUDA (e.g.
+    Volta V100 ``sm_70``), and preserves ``float64`` for double-precision tensors.
     """
     if mode not in _NS_MODES:
         raise ValueError(
@@ -228,7 +240,7 @@ def newton_schulz(
             f"Expected >=2D tensor for Newton-Schulz, got shape {tuple(orig_shape)}"
         )
 
-    work_dtype = torch.float64 if grad_matrix.dtype == torch.float64 else torch.bfloat16
+    work_dtype = _ns_work_dtype(grad_matrix)
     x = grad_matrix.to(dtype=work_dtype)
     if x.ndim > 3:
         x = x.reshape(-1, orig_shape[-2], orig_shape[-1])
@@ -279,7 +291,7 @@ def newton_schulz_orthogonalize(
         raise ValueError(
             f"Expected 2D or 3D tensor for Newton-Schulz, got shape {tuple(grad_matrix.shape)}"
         )
-    work_dtype = torch.float64 if grad_matrix.dtype == torch.float64 else torch.bfloat16
+    work_dtype = _ns_work_dtype(grad_matrix)
     x = grad_matrix.to(dtype=work_dtype)
     transposed = x.size(-2) > x.size(-1)
     if transposed:

@@ -131,10 +131,10 @@ extern "C" int sp2_jit_compile_cuda(const char* source, const char* architecture
         if (!source || !architecture || !output)
             throw std::invalid_argument("Missing NVRTC preparation input");
         const std::string arch = architecture;
-        if (arch != "sm_80" && arch != "sm_86" && arch != "sm_89" && arch != "sm_90" &&
-            arch != "sm_120")
+        if (arch != "sm_70" && arch != "sm_80" && arch != "sm_86" && arch != "sm_89" &&
+            arch != "sm_90" && arch != "sm_120")
             throw std::invalid_argument(
-                "NVRTC preparation requires sm_80, sm_86, sm_89, sm_90, or sm_120");
+                "NVRTC preparation requires sm_70, sm_80, sm_86, sm_89, sm_90, or sm_120");
         const auto& api = nvrtc();
         Program program{api};
         api.check(api.create(&program.value, source, "sp2_generated.cu", 0, nullptr, nullptr),

@@ -860,7 +860,7 @@ public:
                         const std::size_t env_bytes =
                             static_cast<std::size_t>(lt.env.cols) * sizeof(T);
                         // <=48 KiB uses static smem; (48, 96] KiB uses portable dynamic opt-in smem
-                        // (fits all sm_80/86/89/90/120); >96 KiB reads env directly from global memory.
+                        // (fits all sm_70/80/86/89/90/120); >96 KiB reads env directly from global memory.
                         const unsigned smem_bytes =
                             (env_bytes > 48u * 1024u && env_bytes <= 96u * 1024u)
                                 ? static_cast<unsigned>(env_bytes)

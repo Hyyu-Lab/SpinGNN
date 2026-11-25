@@ -380,3 +380,42 @@ def test_end_to_end_training_convergence_hybrid_muon_amp_checkpoint():
     # Confirm SOC & spin_gate learned non-zero weights from the spin-torque target
     assert abs(float(model.adam_spin_gate.item())) > 1e-4
     assert float(model.soc_dmi_out.weight.abs().max().item()) > 1e-5
+
+
+def test_v2_pre_ampere_volta_bf16_fallback(monkeypatch):
+    """Pre-Ampere CUDA devices (e.g. V100 sm_70) fall back from bfloat16 to float32."""
+    from spingnn2.v2.optim import _ns_work_dtype
+    from spingnn2.v2.stage0 import edge_bf16_autocast
+
+    class _FakeCudaTensor:
+        def __init__(self, dtype):
+            self.dtype = dtype
+            self.is_cuda = True
+            self.device = torch.device("cuda", 0)
+
+    # Simulate Volta V100 (compute capability 7.0)
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda _dev=None: (7, 0))
+    assert _ns_work_dtype(_FakeCudaTensor(torch.float32)) == torch.float32
+    assert _ns_work_dtype(_FakeCudaTensor(torch.float64)) == torch.float64
+
+    entered = []
+    orig_autocast = torch.amp.autocast
+
+    def _recording_autocast(*args, **kwargs):
+        entered.append((args, kwargs))
+        return orig_autocast(*args, **kwargs)
+
+    monkeypatch.setattr(torch.amp, "autocast", _recording_autocast)
+    with edge_bf16_autocast(True, _FakeCudaTensor(torch.float32)):
+        pass
+    assert entered == [], "edge_bf16_autocast must disable bf16 autocast on sm_70"
+
+    # Simulate Ampere+ (compute capability 8.0) -> bf16 stays enabled
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda _dev=None: (8, 0))
+    assert _ns_work_dtype(_FakeCudaTensor(torch.float32)) == torch.bfloat16
+    assert _ns_work_dtype(_FakeCudaTensor(torch.float64)) == torch.float64
+    with edge_bf16_autocast(True, _FakeCudaTensor(torch.float32)):
+        pass
+    assert len(entered) == 1
+    assert entered[0][1]["dtype"] == torch.bfloat16
+    assert entered[0][1]["device_type"] == "cuda"

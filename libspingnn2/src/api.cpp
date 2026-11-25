@@ -198,8 +198,11 @@ sp2_options options(const sp2_graph *graph, const sp2_options *opt) {
 void select_math(sp2::Engine &engine, uint32_t mode) {
     sp2::require(mode == SP2_MATH_IEEE || mode == SP2_MATH_TF32, "Unknown BLAS math mode");
 #ifdef SP2_ENABLE_CUDA
-    sp2::require(mode != SP2_MATH_TF32 || engine.plan.precision == 32,
-                 "TF32 requires a CUDA FP32 model");
+    if (mode == SP2_MATH_TF32) {
+        sp2::require(engine.plan.precision == 32, "TF32 requires a CUDA FP32 model");
+        sp2::require(sp2::device_caps().major >= 8,
+                     "TF32 requires an Ampere or newer (sm_80+) CUDA GPU");
+    }
     sp2::use_tf32 = mode == SP2_MATH_TF32;
 #else
     sp2::require(mode == SP2_MATH_IEEE, "TF32 requires a CUDA FP32 model");
@@ -242,7 +245,7 @@ int sp2_model_load_device(const char *manifest, int32_t precision, int32_t devic
             throw std::invalid_argument("Unsupported inference precision");
 #ifdef SP2_ENABLE_CUDA
         auto info = sp2::Json::parse(handle->engine->info);
-        info["supports_tf32"] = precision == 32;
+        info["supports_tf32"] = precision == 32 && sp2::device_caps().major >= 8;
         handle->engine->info = info.dump();
 #endif
         *out = handle.release();

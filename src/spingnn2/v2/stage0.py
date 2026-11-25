@@ -336,8 +336,11 @@ class VacuumRefEnergyHead(nn.Module):
 
 @contextlib.contextmanager
 def edge_bf16_autocast(enabled: bool, tensor: torch.Tensor) -> Iterator[None]:
-    """Enable edge-side ``bfloat16`` AMP while keeping FP64 runs untouched."""
+    """Enable edge-side ``bfloat16`` AMP while keeping FP64 and pre-Ampere CUDA untouched."""
     use_amp = bool(enabled) and tensor.dtype != torch.float64
+    if use_amp and tensor.is_cuda:
+        major, _ = torch.cuda.get_device_capability(tensor.device)
+        use_amp = major >= 8
     if not use_amp:
         yield
         return

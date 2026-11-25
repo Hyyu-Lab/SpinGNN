@@ -298,7 +298,7 @@ def main():
     parser.add_argument(
         "--target",
         required=True,
-        help="Target: cpu, sm80, sm86, sm89, sm90, sm120, comma-separated list, or all-gpu",
+        help="Target: cpu, sm70, sm80, sm86, sm89, sm90, sm120, comma-separated list, or all-gpu",
     )
     parser.add_argument("--upstream", type=Path, default=OUT / "upstream")
     parser.add_argument("--cuda-root", type=Path)

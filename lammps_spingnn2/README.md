@@ -11,7 +11,7 @@ gh repo clone lammps/lammps validation/lammps/upstream -- --depth 1 --branch sta
 python lammps_spingnn2/apply.py --upstream validation/lammps/upstream --destination validation/lammps/source
 python lammps_spingnn2/apply.py --check --destination validation/lammps/source
 python tools/spingnn2_build.py --target cpu
-python tools/spingnn2_build.py --target all-gpu   # sm80,sm86,sm89,sm90,sm120 fat binary (or single sm*)
+python tools/spingnn2_build.py --target all-gpu   # sm70,sm80,sm86,sm89,sm90,sm120 fat binary (or single sm*)
 ```
 
 The build frontend submits to Slurm when called from the login node. Within

@@ -22,8 +22,9 @@ from .contract import load_contract_with_digest
 _ABI = 1
 _KERNEL_ABI = 1
 _BUNDLE_ABI = 1
-_ARCHES = ("sm_80", "sm_86", "sm_89", "sm_90", "sm_120")
+_ARCHES = ("sm_70", "sm_80", "sm_86", "sm_89", "sm_90", "sm_120")
 _ARCH_ALIASES = {
+    "sm70": "sm_70",
     "sm80": "sm_80",
     "sm86": "sm_86",
     "sm89": "sm_89",
@@ -403,7 +404,7 @@ def main(argv=None):
     parser.add_argument("--precision", choices=("float32", "float64"))
     parser.add_argument(
         "--arch",
-        help="Target CUDA arch (sm80|sm86|sm89|sm90|sm120, comma-separated list, or all-gpu)",
+        help="Target CUDA arch (sm70|sm80|sm86|sm89|sm90|sm120, comma-separated list, or all-gpu)",
     )
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--library", type=Path)

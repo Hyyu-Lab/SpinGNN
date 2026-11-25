@@ -25,21 +25,51 @@ def _load_build_native():
 
 def test_parse_cuda_arches_registry_and_validation():
     bn = _load_build_native()
-    assert bn.parse_cuda_arches("all-gpu") == ("sm80", "sm86", "sm89", "sm90", "sm120")
-    assert bn.parse_cuda_arches("sm120,sm80,sm_89,sm80") == ("sm80", "sm89", "sm120")
+    assert bn.parse_cuda_arches("all-gpu") == (
+        "sm70",
+        "sm80",
+        "sm86",
+        "sm89",
+        "sm90",
+        "sm120",
+    )
+    assert bn.parse_cuda_arches("sm120,sm80,sm_70,sm_89,sm80") == (
+        "sm70",
+        "sm80",
+        "sm89",
+        "sm120",
+    )
     assert jit.parse_cuda_arches("all-gpu") == (
+        "sm_70",
         "sm_80",
         "sm_86",
         "sm_89",
         "sm_90",
         "sm_120",
     )
-    assert jit.parse_cuda_arches("sm80;sm_90,sm120") == ("sm_80", "sm_90", "sm_120")
-    for bad in ("", "sm70", "sm99", "sm_50", "foo"):
+    assert jit.parse_cuda_arches("sm70;sm80;sm_90,sm120") == (
+        "sm_70",
+        "sm_80",
+        "sm_90",
+        "sm_120",
+    )
+    for bad in ("", "sm60", "sm75", "sm99", "sm_50", "foo"):
         with pytest.raises(ValueError):
             bn.parse_cuda_arches(bad)
         with pytest.raises(ValueError):
             jit.parse_cuda_arches(bad)
+
+
+def test_sm70_launch_bounds_and_cuda_codegen():
+    """Volta V100 (sm_70) uses conservative (128, 4) launch bounds for JIT kernels."""
+    from spingnn2 import jit_codegen
+
+    assert jit_codegen._launch_bounds("sm_70", heavy=False) == "128, 4"
+    assert jit_codegen._launch_bounds("sm_70", heavy=True) == "128, 4"
+    src = jit_codegen.Source(backend="cuda", precision="float32", gpu_arch="sm_70")
+    src.kernel("sp2_test_volta", [("int", "n")], "if (i < n) {}", heavy=True)
+    emitted = "\n".join(src.parts)
+    assert "__launch_bounds__(128, 4)" in emitted
 
 
 def test_nvcc_fatbin_shim_compile_dlink_and_passthrough(tmp_path):
@@ -53,7 +83,9 @@ def test_nvcc_fatbin_shim_compile_dlink_and_passthrough(tmp_path):
     )
     fake_nvcc.chmod(0o755)
     shim = bn.write_nvcc_fatbin_shim(
-        tmp_path / "shim-bin", fake_nvcc, ("sm80", "sm86", "sm89", "sm90", "sm120")
+        tmp_path / "shim-bin",
+        fake_nvcc,
+        ("sm70", "sm80", "sm86", "sm89", "sm90", "sm120"),
     )
 
     def run_shim(*args):
@@ -63,18 +95,18 @@ def test_nvcc_fatbin_shim_compile_dlink_and_passthrough(tmp_path):
     # 1. --version passthrough (no gencode injected)
     assert run_shim("--version") == ["--version"]
 
-    # 2. Normal compile (-c) replaces single Kokkos -arch=sm_80 with all 5 sm + compute_120 PTX
-    compiled = run_shim("-arch=sm_80", "-O3", "-c", "foo.cpp", "-o", "foo.o")
-    assert "-arch=sm_80" not in compiled
-    for n in (80, 86, 89, 90, 120):
+    # 2. Normal compile (-c) replaces single Kokkos -arch=sm_70 with all 6 sm + compute_120 PTX
+    compiled = run_shim("-arch=sm_70", "-O3", "-c", "foo.cpp", "-o", "foo.o")
+    assert "-arch=sm_70" not in compiled
+    for n in (70, 80, 86, 89, 90, 120):
         assert f"-gencode=arch=compute_{n},code=sm_{n}" in compiled
     assert "-gencode=arch=compute_120,code=compute_120" in compiled
     assert compiled[-4:] == ["-O3", "-c", "foo.cpp", "-o", "foo.o"][-4:]
 
-    # 3. Device link (-dlink / -rdc=true) injects all 5 real sm_XX targets and NO virtual PTX
-    dlinked = run_shim("-arch", "sm_80", "-dlink", "a.o", "b.o", "-o", "dlink.o")
-    assert "-arch" not in dlinked and "sm_80" not in dlinked
-    for n in (80, 86, 89, 90, 120):
+    # 3. Device link (-dlink / -rdc=true) injects all 6 real sm_XX targets and NO virtual PTX
+    dlinked = run_shim("-arch", "sm_70", "-dlink", "a.o", "b.o", "-o", "dlink.o")
+    assert "-arch" not in dlinked and "sm_70" not in dlinked
+    for n in (70, 80, 86, 89, 90, 120):
         assert f"-gencode=arch=compute_{n},code=sm_{n}" in dlinked
     assert "-gencode=arch=compute_120,code=compute_120" not in dlinked
 

@@ -24,8 +24,8 @@ void require(bool valid, const char* message) {
 }
 
 bool is_supported_cuda_arch(std::string_view arch) {
-    return arch == "sm_80" || arch == "sm_86" || arch == "sm_89" || arch == "sm_90" ||
-           arch == "sm_120";
+    return arch == "sm_70" || arch == "sm_80" || arch == "sm_86" || arch == "sm_89" ||
+           arch == "sm_90" || arch == "sm_120";
 }
 
 bool build_supports_cuda_arch(std::string_view arch) {
