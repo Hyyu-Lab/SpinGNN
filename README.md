@@ -4,6 +4,8 @@
 
 ### Time-Reversal-Equivariant Neural-Network Potentials, Native C++17 / Kokkos Multi-GPU Inference & Modern LAMMPS Spin-Lattice Dynamics
 
+**English** · [简体中文](README_zh.md)
+
 [![Release](https://img.shields.io/badge/release-v2.0.0-2563eb?style=flat-square)](https://github.com/Hyyu-Lab/SpinGNN/releases/tag/v2.0.0)
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20GPL--2.0%20Overlay-0f766e?style=flat-square)](LICENSES.md)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
@@ -404,6 +406,10 @@ and [CITATION.cff](CITATION.cff).
    “Tangent-plane evidential uncertainty in active learning for magnetic
    interatomic potentials,” *Physical Review Materials* **10**, 103807 (2026).
    [DOI: 10.1103/PhysRevMaterials.10.103807](https://doi.org/10.1103/PhysRevMaterials.10.103807) · [arXiv:2605.12353](https://arxiv.org/abs/2605.12353)
+5. **PhysMuon**: Y. Hu, H. Xiang, X. Gong, and H. Yu,
+   “A Physical Response-and-Memory Model for Muon Optimization,”
+   *arXiv preprint* (2026).
+   [arXiv:2608.22994](https://arxiv.org/abs/2608.22994)
 
 ### Contributors & Project Leadership
 

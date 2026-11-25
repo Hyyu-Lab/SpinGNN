@@ -1,12 +1,12 @@
 cff-version: 1.2.0
 message: >-
-  If you use SpinGNN, please cite the papers relevant to your workflow
+  If you use SpinGNN2, please cite the papers relevant to your workflow
   from the references below.
-title: SpinGNN
+title: SpinGNN2
 type: software
 repository-code: https://github.com/Hyyu-Lab/SpinGNN
 url: https://github.com/Hyyu-Lab/SpinGNN
-version: 0.1.0
+version: 2.0.0
 authors:
   - given-names: Hongyu
     family-names: Yu
@@ -130,3 +130,22 @@ references:
     identifiers:
       - type: url
         value: https://arxiv.org/abs/2605.12353
+  - type: article
+    title: A Physical Response-and-Memory Model for Muon Optimization
+    authors:
+      - given-names: Yinze
+        family-names: Hu
+      - given-names: Hongjun
+        family-names: Xiang
+        orcid: https://orcid.org/0000-0002-9396-3214
+      - given-names: Xingao
+        family-names: Gong
+      - given-names: Hongyu
+        family-names: Yu
+        orcid: https://orcid.org/0000-0002-2513-2523
+    year: 2026
+    date-published: 2026-08-24
+    url: https://arxiv.org/abs/2608.22994
+    identifiers:
+      - type: url
+        value: https://arxiv.org/abs/2608.22994
