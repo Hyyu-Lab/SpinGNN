@@ -1,0 +1,169 @@
+cmake_minimum_required(VERSION 3.24)
+project(spingnn2 VERSION 1.0.0 LANGUAGES CXX)
+
+include(FetchContent)
+include(GNUInstallDirs)
+include(CheckFunctionExists)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Keep sibling runtime libraries discoverable if the install tree is moved.
+  list(PREPEND CMAKE_INSTALL_RPATH "$ORIGIN")
+endif()
+
+option(SP2_ENABLE_CUDA "Use Kokkos CUDA and cuBLAS" OFF)
+option(SP2_BUILD_PROBE_ONLY "Build only the backend and contract toolchain probe" OFF)
+option(SP2_STATIC_GNU_RUNTIME "Keep GNU C++ and unwind runtimes private to the C ABI" ON)
+set(SP2_CPU_BLAS_ROOT "" CACHE PATH "Optional Intel oneMKL installation root")
+set(SP2_KOKKOS_SOURCE "" CACHE PATH "Local Kokkos 4.7.02 source for an offline build")
+set(SP2_JSON_SOURCE "" CACHE PATH "Local nlohmann/json 3.11.3 source for an offline build")
+set(SP2_CUDA_ARCHES "" CACHE STRING "Semicolon-separated CUDA SM targets (e.g. sm_80;sm_86;sm_89;sm_90;sm_120)")
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Link the Kokkos runtime into the C ABI library" FORCE)
+set(Kokkos_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(Kokkos_ENABLE_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(Kokkos_ENABLE_OPENMP ON CACHE BOOL "" FORCE)
+set(Kokkos_ENABLE_SERIAL ON CACHE BOOL "" FORCE)
+set(Kokkos_ENABLE_CUDA ${SP2_ENABLE_CUDA} CACHE BOOL "" FORCE)
+if(SP2_ENABLE_CUDA)
+  set(Kokkos_ENABLE_CUDA_LAMBDA ON CACHE BOOL "" FORCE)
+  find_package(CUDAToolkit 12.8 REQUIRED)
+endif()
+
+if(SP2_KOKKOS_SOURCE)
+  set(FETCHCONTENT_SOURCE_DIR_KOKKOS "${SP2_KOKKOS_SOURCE}")
+endif()
+if(SP2_JSON_SOURCE)
+  set(FETCHCONTENT_SOURCE_DIR_JSON "${SP2_JSON_SOURCE}")
+endif()
+FetchContent_Declare(kokkos
+  URL https://codeload.github.com/kokkos/kokkos/tar.gz/refs/tags/4.7.02
+  URL_HASH SHA256=de8a1a137cf2110d391a21454406f4f5ea367c7610b540a3961f7bf1246b4ff8)
+FetchContent_Declare(json
+  URL https://codeload.github.com/nlohmann/json/tar.gz/refs/tags/v3.11.3
+  URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406)
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+FetchContent_MakeAvailable(kokkos json)
+find_package(OpenSSL 1.1 REQUIRED COMPONENTS Crypto)
+
+add_library(sp2_backend INTERFACE)
+target_link_libraries(sp2_backend INTERFACE Kokkos::kokkos nlohmann_json::nlohmann_json OpenSSL::Crypto)
+if(SP2_ENABLE_CUDA)
+  target_link_libraries(sp2_backend INTERFACE CUDA::cublas CUDA::cublasLt CUDA::cudart)
+  target_compile_definitions(sp2_backend INTERFACE SP2_ENABLE_CUDA=1)
+elseif(SP2_CPU_BLAS_ROOT)
+  find_path(SP2_BLAS_INCLUDE mkl.h PATHS "${SP2_CPU_BLAS_ROOT}/include" NO_DEFAULT_PATH REQUIRED)
+  # Pair Kokkos/OpenMP and MKL with the same OpenMP runtime. Linking
+  # mkl_rt would select Intel OpenMP unless the caller changed its environment.
+  set(SP2_MKL_THREADING sequential)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(SP2_MKL_THREADING gnu_thread)
+  endif()
+  foreach(component intel_lp64 ${SP2_MKL_THREADING} core)
+    find_library(SP2_MKL_${component} mkl_${component} PATHS "${SP2_CPU_BLAS_ROOT}"
+      PATH_SUFFIXES lib lib/intel64 NO_DEFAULT_PATH REQUIRED)
+    target_link_libraries(sp2_backend INTERFACE "${SP2_MKL_${component}}")
+  endforeach()
+  target_include_directories(sp2_backend INTERFACE "${SP2_BLAS_INCLUDE}")
+  target_link_libraries(sp2_backend INTERFACE ${CMAKE_DL_LIBS})
+  target_compile_definitions(sp2_backend INTERFACE SP2_USE_MKL=1)
+else()
+  find_package(BLAS REQUIRED)
+  find_path(SP2_CBLAS_INCLUDE cblas.h REQUIRED)
+  set(CMAKE_REQUIRED_LIBRARIES BLAS::BLAS)
+  check_function_exists(cblas_sgemm SP2_HAS_CBLAS)
+  unset(CMAKE_REQUIRED_LIBRARIES)
+  if(NOT SP2_HAS_CBLAS)
+    message(FATAL_ERROR "The BLAS library lacks CBLAS. Select OpenBLAS or set SP2_CPU_BLAS_ROOT.")
+  endif()
+  target_link_libraries(sp2_backend INTERFACE BLAS::BLAS)
+  target_include_directories(sp2_backend INTERFACE "${SP2_CBLAS_INCLUDE}")
+endif()
+
+add_executable(sp2_toolchain_probe EXCLUDE_FROM_ALL src/toolchain_probe.cpp src/contract.cpp)
+target_link_libraries(sp2_toolchain_probe PRIVATE sp2_backend)
+
+function(sp2_link_gnu_runtime target)
+  if(SP2_STATIC_GNU_RUNTIME AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # No C++ exceptions, types or allocator ownership cross the C boundary.
+    # A private runtime lets ctypes coexist with a previously loaded libstdc++.
+    target_link_options(${target} PRIVATE -static-libstdc++ -static-libgcc)
+  endif()
+endfunction()
+sp2_link_gnu_runtime(sp2_toolchain_probe)
+
+if(NOT SP2_BUILD_PROBE_ONLY)
+  add_library(spingnn2 SHARED src/api.cpp src/contract.cpp
+    src/jit_artifact.cpp src/jit_cuda_plugin.cpp src/jit_host_plugin.cpp)
+  target_link_libraries(spingnn2 PRIVATE ${CMAKE_DL_LIBS})
+  if(SP2_ENABLE_CUDA)
+    # Do not link the driver, cuBLAS, or Kokkos into preparation. A CPU node
+    # with the toolkit can emit executable cubins for a different GPU host.
+    add_library(spingnn2_jit_prepare SHARED src/jit_nvrtc.cpp)
+    target_include_directories(spingnn2_jit_prepare PRIVATE include ${CUDAToolkit_INCLUDE_DIRS})
+    target_link_libraries(spingnn2_jit_prepare PRIVATE ${CMAKE_DL_LIBS})
+    target_compile_definitions(spingnn2_jit_prepare PRIVATE SP2_ENABLE_CUDA=1)
+    if(SP2_CUDA_ARCHES)
+      set(sp2_cuda_targets "${SP2_CUDA_ARCHES}")
+    elseif(Kokkos_ARCH_BLACKWELL120)
+      set(sp2_cuda_targets "sm_120")
+    elseif(Kokkos_ARCH_HOPPER90)
+      set(sp2_cuda_targets "sm_90")
+    elseif(Kokkos_ARCH_ADA89)
+      set(sp2_cuda_targets "sm_89")
+    elseif(Kokkos_ARCH_AMPERE86)
+      set(sp2_cuda_targets "sm_86")
+    elseif(Kokkos_ARCH_AMPERE80)
+      set(sp2_cuda_targets "sm_80")
+    else()
+      message(FATAL_ERROR "Set the CUDA build architecture to AMPERE80, AMPERE86, ADA89, HOPPER90, or BLACKWELL120 (or SP2_CUDA_ARCHES).")
+    endif()
+    string(REPLACE "," ";" sp2_cuda_targets "${sp2_cuda_targets}")
+    set(sp2_valid_arches "sm_80;sm_86;sm_89;sm_90;sm_120")
+    foreach(sp2_arch IN LISTS sp2_cuda_targets)
+      if(NOT sp2_arch IN_LIST sp2_valid_arches)
+        message(FATAL_ERROR "Unsupported SpinGNN2 CUDA architecture '${sp2_arch}'. Expected one of: ${sp2_valid_arches}.")
+      endif()
+    endforeach()
+    string(JOIN "," sp2_cuda_target_str ${sp2_cuda_targets})
+    foreach(target spingnn2 spingnn2_jit_prepare)
+      target_compile_definitions(${target} PRIVATE SP2_JIT_TARGET_ARCH="${sp2_cuda_target_str}")
+    endforeach()
+    sp2_link_gnu_runtime(spingnn2_jit_prepare)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      target_link_options(spingnn2_jit_prepare PRIVATE "LINKER:--exclude-libs,ALL")
+    endif()
+    add_dependencies(spingnn2 spingnn2_jit_prepare)
+    install(TARGETS spingnn2_jit_prepare LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+  endif()
+  target_link_libraries(spingnn2 PRIVATE sp2_backend)
+  target_include_directories(spingnn2 PUBLIC
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+    "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
+  set_target_properties(spingnn2 PROPERTIES VERSION 1.0.0 SOVERSION 1)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(abi_exports "${CMAKE_CURRENT_SOURCE_DIR}/src/abi.exports")
+    target_link_options(spingnn2 PRIVATE
+      "LINKER:--exclude-libs,ALL"
+      "LINKER:--version-script=${abi_exports}")
+    set_property(TARGET spingnn2 APPEND PROPERTY LINK_DEPENDS "${abi_exports}")
+  endif()
+  sp2_link_gnu_runtime(spingnn2)
+  install(TARGETS spingnn2 LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+  install(FILES include/spingnn2_c_api.h include/spingnn2_jit_prepare.h DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+  install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../THIRD_PARTY_LICENSES.md"
+    DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/doc/spingnn2")
+  install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSES/MIT-SpinGNN.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSES/Kokkos-4.7.02.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSES/Kokkos-Copyright.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../LICENSES/nlohmann-json-3.11.3.txt"
+    DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/doc/spingnn2/LICENSES")
+endif()

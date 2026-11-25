@@ -1,0 +1,35 @@
+# Python build, test, and environment artifacts.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+
+# Training outputs and large model artifacts belong in release assets or LFS.
+wandb/
+*.pth
+*.pt
+*.ckpt
+
+# Editor and operating-system files.
+.vscode/
+.idea/
+.DS_Store
+*~
+
+# Local validation outputs and crash dumps.
+/validation/
+/core
+/core.*
+
+# SpinGNN2 native build trees and generated model contracts.
+/libspingnn2/build*/
+.sp2-deps/
+*.sp2.bin
+log.lammps
+src/spingnn2/gpst/_edge_kernel.so

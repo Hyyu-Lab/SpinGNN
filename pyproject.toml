@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spingnn2"
+version = "2.0.0"
+description = "SpinGNN2: magnetic equivariant neural-network potentials, native Kokkos inference engine, and modern LAMMPS runtime"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.22", "scipy>=1.8"]
+
+[project.optional-dependencies]
+ase = ["ase>=3.22"]
+
+[project.scripts]
+spingnn-data = "spingnn2.data.vasp_spin:main"
+spingnn2-export = "spingnn2.cli:main"
+spingnn2-prepare-jit-artifact = "spingnn2.jit:main"
+spingnn2-gpst-moments = "spingnn2.gpst.cli:main_moments"
+spingnn2-gpst-infer = "spingnn2.gpst.cli:main_infer"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["spingnn2*"]
+
+[tool.setuptools.package-data]
+spingnn2 = ["geometry_kernels.hpp", "gpst/*.c", "gpst/*.so"]

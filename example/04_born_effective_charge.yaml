@@ -1,0 +1,130 @@
+# Purpose: Allegro energy, force, stress, and Born-effective-charge training.
+# Acceleration: H100 TF32 is enabled with the calibrated fp32 safety tier.
+# full_fx is not available for ParaStressForceOutput, so this model stays eager;
+# no compile speedup is claimed, and the TF32 gain is workload-dependent.
+# Eager fp32 fallback: set float32_matmul_precision: highest and
+# allow_tf32: false; spingnn_compile is already disabled below.
+# Run from the repository root: spingnn-train example/04_born_effective_charge.yaml
+
+# Update this section for your dataset.
+root: results/born_effective_charge
+run_name: example
+dataset_file_name: ./example/data/born_effective_charge.extxyz
+n_train: 800
+n_val: 100
+chemical_symbol_to_type:
+  O: 0
+  Hf: 1
+r_max: 5.0
+
+# Model.
+model_builders:
+  - allegro.model.Allegro_born
+  - PerSpeciesRescale
+  - ParaStressForceOutput
+  - RescaleEnergyEtc
+
+# Allegro_born predicts a 3 x 3 Born effective-charge tensor per atom.
+# l_max must be at least 2 for the tensor outputs used by this model.
+l_max: 2
+parity: o3_full
+num_layers: 2
+env_embed_multiplicity: 16
+two_body_latent_mlp_latent_dimensions: [32, 64, 128]
+latent_mlp_latent_dimensions: [128]
+edge_eng_mlp_latent_dimensions: [128, 64]
+
+# One scale is required for each entry in chemical_symbol_to_type, in the
+# same type-index order. These HfO2 values correspond to O: -2 and Hf: +4.
+born_scale_list: [-2.0, 4.0]
+born_scale_trainable: false
+
+avg_num_neighbors: auto
+BesselBasis_num_basis: 8
+BesselBasis_trainable: false
+PolynomialCutoff_p: 48
+embed_initial_edge: true
+two_body_latent_mlp_nonlinearity: silu
+two_body_latent_mlp_initialization: uniform
+latent_mlp_nonlinearity: silu
+latent_mlp_initialization: uniform
+latent_resnet: true
+env_embed_mlp_latent_dimensions: []
+env_embed_mlp_nonlinearity: null
+env_embed_mlp_initialization: uniform
+edge_eng_mlp_nonlinearity: silu
+edge_eng_mlp_initialization: uniform
+
+# Data. Each atom must have born_effective_charges with 9 flattened tensor
+# components. total_born_effective_charges is generated internally as zero to
+# impose the acoustic sum rule.
+dataset: ase
+ase_args:
+  format: extxyz
+train_val_split: random
+shuffle: true
+
+# Remove energy, force, or stress entries if those labels are absent. The
+# relative weights are starting values and should be tuned for each dataset.
+loss_coeffs:
+  total_energy:
+    - 10.0
+    - PerAtomMSELoss
+  forces: 1.0
+  stress: 1.0
+  born_effective_charges: 0.1
+  total_born_effective_charges: 1.0
+
+metrics_components:
+  - [total_energy, mae, {PerAtom: true}]
+  - [forces, mae]
+  - [stress, mae]
+  - [born_effective_charges, mae]
+  - [born_effective_charges, rmse]
+  - [total_born_effective_charges, mae]
+
+batch_size: 1
+max_epochs: 1000000
+learning_rate: 0.001
+optimizer_name: Adam
+optimizer_kwargs:
+  amsgrad: true
+  betas: [0.9, 0.999]
+  eps: 1.0e-08
+  weight_decay: 0.0
+lr_scheduler_name: ReduceLROnPlateau
+lr_scheduler_patience: 10
+lr_scheduler_factor: 0.5
+early_stopping_lower_bounds:
+  LR: 1.0e-6
+early_stopping_patiences:
+  validation_loss: 30
+metrics_key: validation_loss
+
+append: false
+seed: 123456
+dataset_seed: 123456
+default_dtype: float32
+# full_fx currently supports only ParaStressForceSpinOutput. Keep compilation
+# explicitly disabled for this ParaStressForceOutput model.
+e3nn_optimization_defaults:
+  jit_script_fx: false
+spingnn_compile:
+  enabled: false
+  scope: full_fx
+  dynamic: true
+  inductor_options: {}
+float32_matmul_precision: high
+allow_tf32: true
+# H100 TF32 force errors were 2.93e-3 to 3.92e-3 (8e-3 gate). For a strict
+# publication comparison, use highest/false and rerun the parity gate.
+# bf16 force error was 7.755e-2, so autocast stays disabled for force/stress/BEC.
+train_autocast:
+  enabled: false
+  dtype: bfloat16
+dataloader_num_workers: 0
+use_ema: true
+ema_decay: 0.99
+ema_use_num_updates: true
+wandb: false
+verbose: info

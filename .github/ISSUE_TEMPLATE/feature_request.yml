@@ -1,0 +1,51 @@
+name: Feature Request
+description: Propose a new feature, model capability, or workflow enhancement for SpinGNN2
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: checkboxes
+    id: starred
+    attributes:
+      label: Repository Star / 是否已 Star 本仓库
+      description: Please confirm whether you have starred the [Hyyu-Lab/SpinGNN](https://github.com/Hyyu-Lab/SpinGNN) repository (supporting open-source maintenance). / 请确认是否已为本仓库点亮 Star，感谢支持开源项目维护！
+      options:
+        - label: Yes, I have starred Hyyu-Lab/SpinGNN (是，我已 Star 本仓库)
+          required: false
+        - label: Not yet (暂未 Star)
+          required: false
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component / 所属模块
+      options:
+        - spingnn-data (VASP / DFT data conversion)
+        - SpinGNN++ v1 / SpinGNN2 v2 models & optimizers
+        - Native C++/Kokkos engine & JIT
+        - Modern LAMMPS overlay & GPST
+        - Docs / Examples / AI Skills
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation & Scientific Use Case / 需求背景与科研场景
+      description: Which workflow or material system needs this capability?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Behavior / 预期设计
+      description: Describe interfaces, CLI options, model fields, or LAMMPS commands that would change.
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Alternatives & Validation Plan / 备选方案与验证思路
+      description: Explain alternatives and how numerical/physical correctness can be tested.

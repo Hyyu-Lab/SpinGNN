@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+MODEL_DIR=${1:-/validation/models}
+INPUT_DIR=${2:-/validation/lammps}
+for path in \
+    "$MODEL_DIR/nosoc.pth" \
+    "$MODEL_DIR/bec.pth" \
+    "$INPUT_DIR/nosoc.data" \
+    "$INPUT_DIR/bec.data" \
+    "$INPUT_DIR/bec.bec"; do
+    test -s "$path"
+done
+
+WORK=$(mktemp -d /tmp/spingnn-smoke.XXXXXX)
+cleanup() {
+    case "$WORK" in
+        /tmp/spingnn-smoke.*) rm -rf -- "$WORK" ;;
+        *) echo "Refusing to remove unexpected smoke path: $WORK" >&2 ;;
+    esac
+}
+trap cleanup EXIT
+
+cat >"$WORK/in.nosoc" <<EOF
+log $WORK/nosoc.log
+units metal
+boundary p p p
+atom_style spin
+atom_modify map array
+newton on
+read_data $INPUT_DIR/nosoc.data
+pair_style spin/allegro_spin
+pair_coeff * * $MODEL_DIR/nosoc.pth Mn Ge
+thermo 1
+thermo_style custom step pe etotal temp fmax
+run 0
+print "DOCKER_NOSOC_RUN0_OK"
+velocity all create 300.0 19081 mom yes rot no dist gaussian
+fix integrator all spin/sib 300.0 0.1 91081 lattice moving
+neighbor 0.5 bin
+neigh_modify every 1 delay 0 check yes
+timestep 0.0001
+run 3
+print "DOCKER_NOSOC_SIB3_OK"
+EOF
+
+cat >"$WORK/in.bec" <<EOF
+log $WORK/bec.log
+units metal
+boundary p p p
+atom_style bec
+atom_modify map array
+newton on
+read_data $INPUT_DIR/bec.data
+read_bec $INPUT_DIR/bec.bec
+pair_style allegro
+pair_coeff * * $MODEL_DIR/bec.pth Li Nb O
+fix field all efield 0.0 0.0 0.0 coupling bec piezo no
+compute dip all bec_dipole
+thermo 1
+thermo_style custom step pe etotal fmax c_dip c_dip[1] c_dip[2] c_dip[3] c_dip[4]
+run 0
+print "DOCKER_BEC_RUN0_OK"
+EOF
+
+spingnn-lmp -in "$WORK/in.nosoc" 2>&1 | tee "$WORK/nosoc.stdout"
+grep -Fq DOCKER_NOSOC_RUN0_OK "$WORK/nosoc.stdout"
+grep -Fq DOCKER_NOSOC_SIB3_OK "$WORK/nosoc.stdout"
+
+spingnn-lmp -in "$WORK/in.bec" 2>&1 | tee "$WORK/bec.stdout"
+grep -Fq DOCKER_BEC_RUN0_OK "$WORK/bec.stdout"
+echo "SPINGNN_CONTAINER_SMOKE_OK nosoc_run0=passed spin_sib_steps=3 bec_run0=passed"

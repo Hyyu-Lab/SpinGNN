@@ -1,0 +1,35 @@
+diff --git a/cmake/CMakeLists.txt b/cmake/CMakeLists.txt
+--- a/cmake/CMakeLists.txt
++++ b/cmake/CMakeLists.txt
+@@ -249,6 +249,13 @@ file(GLOB ALL_SOURCES CONFIGURE_DEPENDS ${LAMMPS_SOURCE_DIR}/[^.]*.cpp)
+ file(GLOB MAIN_SOURCES CONFIGURE_DEPENDS ${LAMMPS_SOURCE_DIR}/main.cpp)
+ list(REMOVE_ITEM ALL_SOURCES ${MAIN_SOURCES})
+ add_library(lammps ${ALL_SOURCES})
++find_path(SPINGNN2_INCLUDE spingnn2_c_api.h REQUIRED)
++find_library(SPINGNN2_RUNTIME spingnn2 REQUIRED)
++target_include_directories(lammps PRIVATE "${SPINGNN2_INCLUDE}")
++target_link_libraries(lammps PRIVATE "${SPINGNN2_RUNTIME}")
++if(NOT CMAKE_INSTALL_RPATH)
++  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
++endif()
+ 
+ # add extra libraries for std::filesystem with older compilers
+ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.1)
+@@ -274,11 +281,16 @@ endif()
+
+ add_executable(lmp ${MAIN_SOURCES})
+ target_link_libraries(lmp PRIVATE lammps)
+ set_target_properties(lmp PROPERTIES OUTPUT_NAME ${LAMMPS_BINARY})
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
++  # Include the relocated native library path alongside toolchain RUNPATH entries.
++  set_target_properties(lmp PROPERTIES INSTALL_RPATH
++    "$ORIGIN/../${CMAKE_INSTALL_LIBDIR};${CMAKE_INSTALL_RPATH}")
++endif()
+ # re-export all symbols for plugins
+ if(PKG_PLUGIN AND (NOT ((CMAKE_SYSTEM_NAME STREQUAL "Windows"))))
+   set_target_properties(lmp PROPERTIES ENABLE_EXPORTS TRUE)
+ endif()
+-install(TARGETS lmp EXPORT LAMMPS_Targets DESTINATION ${CMAKE_INSTALL_BINDIR})
++install(TARGETS lmp EXPORT LAMMPS_Targets DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT spingnn2_runtime)
+
+ option(CMAKE_VERBOSE_MAKEFILE "Generate verbose Makefiles" OFF)

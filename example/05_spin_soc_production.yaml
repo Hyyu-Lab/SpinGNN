@@ -1,0 +1,150 @@
+# Purpose: production-scale Spin-Allegro SOC training with derivative targets.
+# Acceleration: full_fx dynamic compilation and calibrated H100 TF32 are on.
+# Reference H100 Allegro result: 0.092098 -> 0.003936 s/step (23.4x);
+# benchmark the final model because graph size, batches, and hardware vary.
+# Eager fp32 fallback: set spingnn_compile.enabled: false,
+# float32_matmul_precision: highest, and allow_tf32: false.
+# Run from the repository root after replacing every placeholder below:
+#   spingnn-train example/05_spin_soc_production.yaml
+
+# Required user inputs. The dataset is not distributed with this repository.
+root: results/spin_soc_production
+run_name: production_v1
+dataset_file_name: /path/to/spin_soc_production.extxyz
+# Replace these split sizes after reserving a separate held-out test set.
+n_train: 10000
+n_val: 1000
+# Replace this mapping with every element in the dataset.
+chemical_symbol_to_type:
+  Fe: 0
+  O: 1
+r_max: 7.0
+
+# SOC model.
+model_builders:
+  - allegro.model.Allegro_soc
+  - PerSpeciesRescale
+  - ParaStressForceSpinOutput
+  - RescaleEnergyEtc
+
+ljmatrix: true
+lani: true
+lbiquadratic: true
+lsoc_layer: true
+ldelta_learning: false
+lpredict_spin_length: false
+ene_coeff_trainable: false
+ledge_cutoff: false
+
+l_max: 2
+spharm_soc_on_l_max: 1
+symmetry: u2
+allegro_onlyr_num_layers: 2
+allegro_soc_on_num_layers: 2
+env_embed_multiplicity: 32
+two_body_latent_mlp_latent_dimensions: [128, 256, 256]
+latent_mlp_latent_dimensions: [256, 256]
+edge_onlyr_eng_mlp_latent_dimensions: [256, 128, 64]
+edge_biquad_coeff_mlp_latent_dimensions: [256, 128, 64]
+edge_eng_soc_on_mlp_latent_dimensions: [128, 64]
+edge_onlyr_eng_coeff: 1.0
+edge_jmatrix_eng_coeff: 0.1
+edge_ani_eng_coeff: 0.01
+edge_biquad_eng_coeff: 0.1
+edge_eng_soc_on_coeff: 0.01
+
+avg_num_neighbors: auto
+BesselBasis_num_basis: 8
+BesselBasis_trainable: false
+PolynomialCutoff_p: 48
+embed_initial_edge: true
+two_body_latent_mlp_nonlinearity: silu
+two_body_latent_mlp_initialization: uniform
+latent_mlp_nonlinearity: silu
+latent_mlp_initialization: uniform
+latent_resnet: true
+env_embed_mlp_latent_dimensions: []
+env_embed_mlp_nonlinearity: null
+env_embed_mlp_initialization: uniform
+edge_onlyr_eng_mlp_nonlinearity: silu
+edge_onlyr_eng_mlp_initialization: uniform
+edge_biquad_coeff_mlp_nonlinearity: silu
+edge_biquad_coeff_mlp_initialization: uniform
+edge_eng_soc_on_mlp_nonlinearity: null
+edge_eng_soc_on_initialization: uniform
+
+# Every frame needs per-atom initial_magmoms. Keep spin_forces_vert distinct
+# from a full spin_forces target.
+dataset: ase
+ase_args:
+  format: extxyz
+train_val_split: random
+shuffle: true
+
+# Tune these weights from validation metrics; do not add labels absent in data.
+loss_coeffs:
+  total_energy:
+    - 10.0
+    - PerAtomMSELoss
+  forces: 1.0
+  stress: 0.1
+  spin_forces_vert: 1.0
+
+metrics_components:
+  - [total_energy, mae, {PerAtom: true}]
+  - [total_energy, rmse, {PerAtom: true}]
+  - [forces, mae]
+  - [forces, rmse]
+  - [stress, mae]
+  - [spin_forces_vert, mae]
+  - [spin_forces_vert, rmse]
+
+# Production training controls. Batch size 8 is a starting point for an H100;
+# reduce it on OOM or increase it only after measuring memory and throughput.
+batch_size: 8
+max_epochs: 2000
+learning_rate: 0.001
+optimizer_name: Adam
+optimizer_kwargs:
+  amsgrad: true
+  betas: [0.9, 0.999]
+  eps: 1.0e-08
+  weight_decay: 1.0e-06
+lr_scheduler_name: ReduceLROnPlateau
+lr_scheduler_patience: 20
+lr_scheduler_factor: 0.5
+early_stopping_lower_bounds:
+  LR: 1.0e-6
+early_stopping_patiences:
+  validation_loss: 80
+early_stopping_upper_bounds:
+  cumulative_wall: 1209600.0  # 14 days
+metrics_key: validation_loss
+
+append: false
+seed: 20260828
+dataset_seed: 20260828
+default_dtype: float32
+e3nn_optimization_defaults:
+  jit_script_fx: false
+spingnn_compile:
+  enabled: true
+  scope: full_fx
+  dynamic: true
+  inductor_options: {}
+float32_matmul_precision: high
+allow_tf32: true
+# H100 TF32 force errors were 2.93e-3 to 3.92e-3 (8e-3 gate), and energy
+# errors were 2.227e-4 to 2.264e-4 eV/atom (5e-4 gate).
+# bf16 force error was 7.755e-2, so autocast is unsafe for this supervision.
+train_autocast:
+  enabled: false
+  dtype: bfloat16
+dataloader_num_workers: 4
+use_ema: true
+ema_decay: 0.999
+ema_use_num_updates: true
+# Enable wandb only after configuring credentials and a project name.
+wandb: false
+wandb_project: SpinGNN
+verbose: info

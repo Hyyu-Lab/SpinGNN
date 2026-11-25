@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "python_lanes": [
+    {"suite": "nequip-unit", "tests": ["src/core/tests/unit", "src/core/nequip/utils/unittests/test_git.py"], "xdist": 4},
+    {"suite": "nequip-integration", "tests": ["src/core/tests/integration"], "xdist": 4},
+    {"suite": "allegro-model-core", "tests": ["src/models/tests/model/test_allegro.py", "src/models/tests/model/test_allegro_universal.py", "src/models/tests/model/test_edge_prune.py"], "xdist": 4},
+    {"suite": "allegro-model-spin", "tests": ["src/models/tests/model/test_allegro_spin_nosoc.py", "src/models/tests/model/test_allegro_spin_soc.py", "src/models/tests/model/test_allegro_activation_checkpoint.py", "src/models/tests/model/test_allegro_spin_nosoc_delta.py", "src/models/tests/model/test_allegro_spin_soc_delta.py", "src/models/tests/model/test_allegro_e2IP.py", "src/models/tests/model/test_allegro_soc_e2IP.py"], "xdist": 4},
+    {"suite": "allegro-model-bec", "tests": ["src/models/tests/model/test_allegro_born.py", "src/models/tests/model/test_allegro_magmom.py", "src/models/tests/model/test_allegro_dipole.py", "src/models/tests/model/test_allegro_dipole_etgnn.py", "src/models/tests/model/test_tensor_feature_response.py"], "xdist": 4},
+    {"suite": "allegro-misc", "tests": ["src/models/tests/nn", "src/models/tests/test_soc_supervision_contract.py"], "xdist": 4},
+    {"suite": "native-contract-oracle", "tests": ["tests_native"], "xdist": 0},
+    {"suite": "v2-symmetry-models", "tests": ["tests_v2"], "xdist": 0},
+    {"suite": "control-plane", "tests": ["tests_ci"], "xdist": 0, "environment": "control"}
+  ],
+  "python_markers": "not gpu and not lammps and not mpi and not slow and not lammps_contract",
+  "additional_lanes": [
+    {"suite": "python-slow", "tests": ["src/core/tests/unit", "src/models/tests"], "markers": "slow and not gpu and not lammps and not mpi", "entry": ".github/workflows/ci.yml"},
+    {"suite": "gpu-nccl", "tests": ["src/core/tests/unit/trainer/test_compiled_optional_ddp.py"], "markers": "gpu and slow", "entry": "tools/ci/gpu_nccl_tests.sh"},
+    {"suite": "gpu-python", "tests": ["src/core/tests/unit", "src/models/tests"], "markers": "(gpu and not slow) or (compile and not gpu) or (slow and not gpu and not lammps and not mpi)", "entry": "tools/ci/gpu_full_tests.sh"}
+  ]
+}

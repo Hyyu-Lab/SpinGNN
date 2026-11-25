@@ -1,0 +1,1065 @@
+diff --git a/src/KOKKOS/atom_kokkos.cpp b/src/KOKKOS/atom_kokkos.cpp
+index b902c39..09302ab 100644
+--- a/src/KOKKOS/atom_kokkos.cpp
++++ b/src/KOKKOS/atom_kokkos.cpp
+@@ -70,6 +70,8 @@ AtomKokkos::~AtomKokkos()
+   memoryKK->destroy_kokkos(k_mass, mass);
+   memoryKK->destroy_kokkos(k_q, q);
+   memoryKK->destroy_kokkos(k_mu, mu);
++  memoryKK->destroy_kokkos(k_bec, bec);
++  memoryKK->destroy_kokkos(k_bec_dipole, bec_dipole);
+ 
+   memoryKK->destroy_kokkos(k_radius, radius);
+   memoryKK->destroy_kokkos(k_rmass, rmass);
+@@ -200,6 +202,7 @@ void *AtomKokkos::extract(const char *name)
+   static const std::map<std::string, uint64_t> extract_mask = {
+       {"id", TAG_MASK}, {"type", TYPE_MASK}, {"mask", MASK_MASK}, {"image", IMAGE_MASK},
+       {"x", X_MASK}, {"v", V_MASK}, {"f", F_MASK}, {"q", Q_MASK}, {"mu", MU_MASK},
++      {"bec", BEC_MASK}, {"bec_dipole", BEC_DIPOLE_MASK},
+       {"omega", OMEGA_MASK}, {"angmom", ANGMOM_MASK}, {"torque", TORQUE_MASK},
+       {"radius", RADIUS_MASK}, {"rmass", RMASS_MASK}, {"ellipsoid", ELLIPSOID_MASK},
+       {"molecule", MOLECULE_MASK}, {"nspecial", SPECIAL_MASK}, {"special", SPECIAL_MASK},
+diff --git a/src/KOKKOS/atom_kokkos.h b/src/KOKKOS/atom_kokkos.h
+index 20c1491..265217a 100644
+--- a/src/KOKKOS/atom_kokkos.h
++++ b/src/KOKKOS/atom_kokkos.h
+@@ -41,6 +41,8 @@ class AtomKokkos : public Atom {
+   DAT::ttransform_kkfloat_1d k_radius;
+   DAT::ttransform_kkfloat_1d k_rmass;
+   DAT::ttransform_kkfloat_1d_4 k_mu;
++  DAT::ttransform_double_1d_9_lr k_bec;
++  DAT::ttransform_double_1d_3_lr k_bec_dipole;
+   DAT::ttransform_kkfloat_1d_3 k_omega;
+   DAT::ttransform_kkfloat_1d_3 k_angmom;
+   DAT::ttransform_kkacc_1d_3 k_torque;
+diff --git a/src/KOKKOS/atom_vec_kokkos.cpp b/src/KOKKOS/atom_vec_kokkos.cpp
+index c154240..252ef24 100644
+--- a/src/KOKKOS/atom_vec_kokkos.cpp
++++ b/src/KOKKOS/atom_vec_kokkos.cpp
+@@ -2237,6 +2237,8 @@ struct AtomVecKokkos_PackExchangeFunctor {
+     _improper_atom3,_improper_atom4;
+   typename AT::t_kkfloat_1d_4 _mu;
+   typename AT::t_kkfloat_1d_4 _sp;
++  typename AT::t_double_1d_9_lr _bec;
++  typename AT::t_double_1d_3_lr _bec_dipole;
+   typename AT::t_kkfloat_1d _radius,_rmass;
+   typename AT::t_kkfloat_1d_3 _omega;
+   typename AT::t_kkfloat_1d_3 _angmom;
+@@ -2286,6 +2288,8 @@ struct AtomVecKokkos_PackExchangeFunctor {
+       _improper_atom4(atomKK->k_improper_atom4.view<DeviceType>()),
+       _mu(atomKK->k_mu.view<DeviceType>()),
+       _sp(atomKK->k_sp.view<DeviceType>()),
++      _bec(atomKK->k_bec.view<DeviceType>()),
++      _bec_dipole(atomKK->k_bec_dipole.view<DeviceType>()),
+       _radius(atomKK->k_radius.view<DeviceType>()),
+       _rmass(atomKK->k_rmass.view<DeviceType>()),
+       _omega(atomKK->k_omega.view<DeviceType>()),
+@@ -2394,6 +2398,12 @@ struct AtomVecKokkos_PackExchangeFunctor {
+         _buf(mysend,m++) = static_cast<double>(_sp(i,3));
+       }
+ 
++      if (_datamask & BEC_MASK)
++        for (int k = 0; k < 9; ++k) _buf(mysend,m++) = _bec(i,k);
++
++      if (_datamask & BEC_DIPOLE_MASK)
++        for (int k = 0; k < 3; ++k) _buf(mysend,m++) = _bec_dipole(i,k);
++
+       if (_datamask & RADIUS_MASK)
+         _buf(mysend,m++) = static_cast<double>(_radius(i));
+ 
+@@ -2510,6 +2520,12 @@ struct AtomVecKokkos_PackExchangeFunctor {
+           _sp(i,3) = _sp(j,3);
+         }
+ 
++        if (_datamask & BEC_MASK)
++          for (int k = 0; k < 9; ++k) _bec(i,k) = _bec(j,k);
++
++        if (_datamask & BEC_DIPOLE_MASK)
++          for (int k = 0; k < 3; ++k) _bec_dipole(i,k) = _bec_dipole(j,k);
++
+         if (_datamask & RADIUS_MASK)
+           _radius(i) = _radius(j);
+ 
+@@ -2630,6 +2646,8 @@ struct AtomVecKokkos_UnpackExchangeFunctor {
+     _improper_atom3,_improper_atom4;
+   typename AT::t_kkfloat_1d_4 _mu;
+   typename AT::t_kkfloat_1d_4 _sp;
++  typename AT::t_double_1d_9_lr _bec;
++  typename AT::t_double_1d_3_lr _bec_dipole;
+   typename AT::t_kkfloat_1d _radius,_rmass;
+   typename AT::t_kkfloat_1d_3 _omega;
+   typename AT::t_kkfloat_1d_3 _angmom;
+@@ -2682,6 +2700,8 @@ struct AtomVecKokkos_UnpackExchangeFunctor {
+       _improper_atom4(atomKK->k_improper_atom4.view<DeviceType>()),
+       _mu(atomKK->k_mu.view<DeviceType>()),
+       _sp(atomKK->k_sp.view<DeviceType>()),
++      _bec(atomKK->k_bec.view<DeviceType>()),
++      _bec_dipole(atomKK->k_bec_dipole.view<DeviceType>()),
+       _radius(atomKK->k_radius.view<DeviceType>()),
+       _rmass(atomKK->k_rmass.view<DeviceType>()),
+       _omega(atomKK->k_omega.view<DeviceType>()),
+@@ -2791,6 +2811,12 @@ struct AtomVecKokkos_UnpackExchangeFunctor {
+           _sp(i,3) = static_cast<KK_FLOAT>(_buf(myrecv,m++));
+         }
+ 
++        if (_datamask & BEC_MASK)
++          for (int k = 0; k < 9; ++k) _bec(i,k) = _buf(myrecv,m++);
++
++        if (_datamask & BEC_DIPOLE_MASK)
++          for (int k = 0; k < 3; ++k) _bec_dipole(i,k) = _buf(myrecv,m++);
++
+         if (_datamask & RADIUS_MASK)
+           _radius(i) = static_cast<KK_FLOAT>(_buf(myrecv,m++));
+ 
+@@ -2957,6 +2983,10 @@ uint64_t AtomVecKokkos::field2mask(std::string field)
+     return IMPROPER_MASK;
+   else if (field == "sp")
+     return SP_MASK;
++  else if (field == "bec")
++    return BEC_MASK;
++  else if (field == "bec_dipole")
++    return BEC_DIPOLE_MASK;
+   else if (field == "fm")
+     return FM_MASK;
+   else if (field == "fm_long")
+@@ -3008,6 +3038,8 @@ int AtomVecKokkos::field2size(std::string field)
+   else if (field == "num_dihedral") return 1+5*atom->dihedral_per_atom;
+   else if (field == "num_improper") return 1+5*atom->improper_per_atom;
+   else if (field == "sp") return 4;
++  else if (field == "bec") return 9;
++  else if (field == "bec_dipole") return 3;
+   else if (field == "fm") return 3;
+   else if (field == "fm_long") return 3;
+   else if (field == "rho") return 1;
+diff --git a/src/KOKKOS/fix_efield_kokkos.cpp b/src/KOKKOS/fix_efield_kokkos.cpp
+index 13318bd..4cc13a2 100644
+--- a/src/KOKKOS/fix_efield_kokkos.cpp
++++ b/src/KOKKOS/fix_efield_kokkos.cpp
+@@ -70,6 +70,7 @@ template<class DeviceType>
+ void FixEfieldKokkos<DeviceType>::init()
+ {
+   FixEfield::init();
++  if (becflag) datamask_read |= BEC_MASK | BEC_DIPOLE_MASK;
+ 
+   if (utils::strmatch(update->integrate_style,"^respa"))
+     error->all(FLERR,"Cannot (yet) use respa with Kokkos");
+@@ -85,6 +86,8 @@ void FixEfieldKokkos<DeviceType>::post_force(int vflag)
+   d_x = atomKK->k_x.template view<DeviceType>();
+   d_f = atomKK->k_f.template view<DeviceType>();
+   d_q = atomKK->k_q.template view<DeviceType>();
++  d_bec = atomKK->k_bec.template view<DeviceType>();
++  d_bec_dipole = atomKK->k_bec_dipole.template view<DeviceType>();
+   d_mu = atomKK->k_mu.template view<DeviceType>();
+   d_torque = atomKK->k_torque.template view<DeviceType>();
+   d_image = atomKK->k_image.template view<DeviceType>();
+@@ -133,11 +136,11 @@ void FixEfieldKokkos<DeviceType>::post_force(int vflag)
+   force_flag = 0;
+   double result[10] = {0.0};
+ 
++  prd = domain->prd;
++  h = domain->h;
++  triclinic = domain->triclinic;
+   if (varflag == CONSTANT) {
+ 
+-    prd = domain->prd;
+-    h = domain->h;
+-    triclinic = domain->triclinic;
+     copymode = 1;
+ 
+     if(qflag && muflag)
+@@ -215,6 +218,7 @@ template<int QFLAG, int MUFLAG>
+ // NOLINTNEXTLINE
+ KOKKOS_INLINE_FUNCTION
+ void FixEfieldKokkos<DeviceType>::operator()(TagFixEfieldConstant<QFLAG,MUFLAG>, const int &i, value_type result) const {
++  if (becflag) bec_tally<true>(i, result);
+   if ( QFLAG && (d_mask(i) & groupbit)) {
+     if (region && !d_match[i]) return;
+ 
+@@ -261,6 +265,7 @@ template<int QFLAG, int MUFLAG>
+ // NOLINTNEXTLINE
+ KOKKOS_INLINE_FUNCTION
+ void FixEfieldKokkos<DeviceType>::operator()(TagFixEfieldNonConstant<QFLAG,MUFLAG>, const int &i, value_type result) const {
++  if (becflag) bec_tally<false>(i, result);
+   if ( QFLAG && (d_mask(i) & groupbit)) {
+     if (region && !d_match[i]) return;
+ 
+@@ -293,6 +298,43 @@ void FixEfieldKokkos<DeviceType>::operator()(TagFixEfieldNonConstant<QFLAG,MUFLA
+   }
+ }
+ 
++template<class DeviceType>
++template<bool Constant>
++KOKKOS_INLINE_FUNCTION
++void FixEfieldKokkos<DeviceType>::bec_tally(int i, value_type result) const
++{
++  if (!(d_mask(i) & groupbit) || (region && !d_match[i])) return;
++
++  const double e[3] = {
++      !Constant && xstyle == ATOM ? qe2f * d_efield(i,0) : ex,
++      !Constant && ystyle == ATOM ? qe2f * d_efield(i,1) : ey,
++      !Constant && zstyle == ATOM ? qe2f * d_efield(i,2) : ez};
++  double f[3];
++  for (int c = 0; c < 3; ++c) {
++    f[c] = d_bec(i,c) * e[0] + d_bec(i,c+3) * e[1] + d_bec(i,c+6) * e[2];
++    d_f(i,c) += static_cast<KK_ACC_FLOAT>(f[c]);
++    result[1+c] += f[c];
++  }
++  if constexpr (Constant) {
++    result[0] -= d_bec_dipole(i,0) * ex + d_bec_dipole(i,1) * ey + d_bec_dipole(i,2) * ez;
++  } else if (estyle == ATOM && !qflag) {
++    result[0] += static_cast<double>(d_efield(i,3));
++  }
++  if (evflag) {
++    Few<double,3> x_i;
++    for (int c = 0; c < 3; ++c) x_i[c] = static_cast<double>(d_x(i,c));
++    const auto unwrap = DomainKokkos::unmap(prd, h, triclinic, x_i, d_image(i));
++    KK_FLOAT v[6] = {
++        static_cast<KK_FLOAT>(f[0] * unwrap[0]),
++        static_cast<KK_FLOAT>(f[1] * unwrap[1]),
++        static_cast<KK_FLOAT>(f[2] * unwrap[2]),
++        static_cast<KK_FLOAT>(f[0] * unwrap[1]),
++        static_cast<KK_FLOAT>(f[0] * unwrap[2]),
++        static_cast<KK_FLOAT>(f[1] * unwrap[2])};
++    v_tally(result, i, v);
++  }
++}
++
+ /* ----------------------------------------------------------------------
+    tally virial into global and per-atom accumulators
+    i = local index of atom
+diff --git a/src/KOKKOS/fix_efield_kokkos.h b/src/KOKKOS/fix_efield_kokkos.h
+index dbdf652..8b4ef63 100644
+--- a/src/KOKKOS/fix_efield_kokkos.h
++++ b/src/KOKKOS/fix_efield_kokkos.h
+@@ -66,6 +66,8 @@ class FixEfieldKokkos : public FixEfield {
+ 
+   typename AT::t_kkfloat_1d_3_lr_randomread d_x;
+   typename AT::t_kkfloat_1d_randomread d_q;
++  typename AT::t_double_1d_9_lr_const d_bec;
++  typename AT::t_double_1d_3_lr_const d_bec_dipole;
+   typename AT::t_kkfloat_1d_4_randomread d_mu;
+   typename AT::t_kkacc_1d_3 d_f;
+   typename AT::t_kkacc_1d_3 d_torque;
+@@ -82,6 +84,9 @@ class FixEfieldKokkos : public FixEfield {
+ // NOLINTNEXTLINE
+   KOKKOS_INLINE_FUNCTION
+   void v_tally(value_type, int, KK_FLOAT*) const;
++
++  template<bool Constant>
++  KOKKOS_INLINE_FUNCTION void bec_tally(int, value_type) const;
+ };
+ 
+ }
+diff --git a/src/KOKKOS/fix_nve_kokkos.cpp b/src/KOKKOS/fix_nve_kokkos.cpp
+index 913403e..a9389f4 100644
+--- a/src/KOKKOS/fix_nve_kokkos.cpp
++++ b/src/KOKKOS/fix_nve_kokkos.cpp
+@@ -47,13 +47,33 @@ void FixNVEKokkos<DeviceType>::init()
+ }
+ 
+ /* ----------------------------------------------------------------------
++   The BEC dipole uses the same displacement as the position update.
+    allow for both per-type and per-atom mass
+ ------------------------------------------------------------------------- */
+ 
++template<class DeviceType>
++KOKKOS_INLINE_FUNCTION
++void FixNVEKokkos<DeviceType>::integrate_bec(int i, KK_FLOAT dt) const
++{
++  if (!bec.data()) return;
++  const double dx = dt * v(i,0);
++  const double dy = dt * v(i,1);
++  const double dz = dt * v(i,2);
++  for (int c = 0; c < 3; ++c)
++    dipole(i,c) += bec(i,3*c) * dx + bec(i,3*c+1) * dy + bec(i,3*c+2) * dz;
++}
++
++/* ---------------------------------------------------------------------- */
++
+ template<class DeviceType>
+ void FixNVEKokkos<DeviceType>::initial_integrate(int /*vflag*/)
+ {
+   atomKK->sync(execution_space,datamask_read);
++  if (atom->bec_flag) {
++    atomKK->sync(execution_space, BEC_MASK | BEC_DIPOLE_MASK);
++    bec = atomKK->k_bec.view<DeviceType>();
++    dipole = atomKK->k_bec_dipole.view<DeviceType>();
++  }
+   atomKK->modified(execution_space,datamask_modify);
+ 
+   x = atomKK->k_x.view<DeviceType>();
+@@ -73,6 +93,7 @@ void FixNVEKokkos<DeviceType>::initial_integrate(int /*vflag*/)
+     FixNVEKokkosInitialIntegrateFunctor<DeviceType,0> functor(this);
+     Kokkos::parallel_for(nlocal,functor);
+   }
++  if (atom->bec_flag) atomKK->modified(execution_space, BEC_DIPOLE_MASK);
+ }
+ 
+ template<class DeviceType>
+@@ -90,6 +111,7 @@ void FixNVEKokkos<DeviceType>::initial_integrate_item(int i) const
+     x(i,0) = Kokkos::fma(dtv_kk, v(i,0), x(i,0));
+     x(i,1) = Kokkos::fma(dtv_kk, v(i,1), x(i,1));
+     x(i,2) = Kokkos::fma(dtv_kk, v(i,2), x(i,2));
++    integrate_bec(i, dtv_kk);
+   }
+ }
+ 
+@@ -108,6 +130,7 @@ void FixNVEKokkos<DeviceType>::initial_integrate_rmass_item(int i) const
+     x(i,0) = Kokkos::fma(dtv_kk, v(i,0), x(i,0));
+     x(i,1) = Kokkos::fma(dtv_kk, v(i,1), x(i,1));
+     x(i,2) = Kokkos::fma(dtv_kk, v(i,2), x(i,2));
++    integrate_bec(i, dtv_kk);
+   }
+ }
+ 
+@@ -176,6 +199,11 @@ template<class DeviceType>
+ void FixNVEKokkos<DeviceType>::fused_integrate(int /*vflag*/)
+ {
+   atomKK->sync(execution_space,datamask_read);
++  if (atom->bec_flag) {
++    atomKK->sync(execution_space, BEC_MASK | BEC_DIPOLE_MASK);
++    bec = atomKK->k_bec.view<DeviceType>();
++    dipole = atomKK->k_bec_dipole.view<DeviceType>();
++  }
+ 
+   x = atomKK->k_x.view<DeviceType>();
+   v = atomKK->k_v.view<DeviceType>();
+@@ -196,6 +224,7 @@ void FixNVEKokkos<DeviceType>::fused_integrate(int /*vflag*/)
+   }
+ 
+   atomKK->modified(execution_space,datamask_modify);
++  if (atom->bec_flag) atomKK->modified(execution_space, BEC_DIPOLE_MASK);
+ }
+ 
+ template<class DeviceType>
+@@ -213,6 +242,7 @@ void FixNVEKokkos<DeviceType>::fused_integrate_item(int i) const
+     x(i,0) = Kokkos::fma(dtv_kk, v(i,0), x(i,0));
+     x(i,1) = Kokkos::fma(dtv_kk, v(i,1), x(i,1));
+     x(i,2) = Kokkos::fma(dtv_kk, v(i,2), x(i,2));
++    integrate_bec(i, dtv_kk);
+   }
+ }
+ 
+@@ -231,6 +261,7 @@ void FixNVEKokkos<DeviceType>::fused_integrate_rmass_item(int i) const
+     x(i,0) = Kokkos::fma(dtv_kk, v(i,0), x(i,0));
+     x(i,1) = Kokkos::fma(dtv_kk, v(i,1), x(i,1));
+     x(i,2) = Kokkos::fma(dtv_kk, v(i,2), x(i,2));
++    integrate_bec(i, dtv_kk);
+   }
+ }
+ 
+diff --git a/src/KOKKOS/fix_nve_kokkos.h b/src/KOKKOS/fix_nve_kokkos.h
+index d4525e8..dd6ade4 100644
+--- a/src/KOKKOS/fix_nve_kokkos.h
++++ b/src/KOKKOS/fix_nve_kokkos.h
+@@ -70,6 +70,10 @@ class FixNVEKokkos : public FixNVE {
+   void fused_integrate_rmass_item(int) const;
+ 
+  private:
++  KOKKOS_INLINE_FUNCTION void integrate_bec(int, KK_FLOAT) const;
++  typename AT::t_double_1d_9_lr_const bec;
++  typename AT::t_double_1d_3_lr dipole;
++
+ 
+   typename AT::t_kkfloat_1d_3_lr x;
+   typename AT::t_kkfloat_1d_3 v;
+diff --git a/src/KOKKOS/kokkos_type.h b/src/KOKKOS/kokkos_type.h
+index 637ba85..f1b7346 100644
+--- a/src/KOKKOS/kokkos_type.h
++++ b/src/KOKKOS/kokkos_type.h
+@@ -1241,6 +1241,7 @@ KOKKOS_DEVICE_DUALVIEW(double*[2], Kokkos::LayoutRight, double_1d_2_lr)
+ KOKKOS_DEVICE_DUALVIEW(double*[3], Kokkos::LayoutRight, double_1d_3_lr)
+ KOKKOS_DEVICE_DUALVIEW(double*[4], Kokkos::LayoutRight, double_1d_4_lr)
+ KOKKOS_DEVICE_DUALVIEW(double*[6], Kokkos::LayoutRight, double_1d_6_lr)
++KOKKOS_DEVICE_DUALVIEW(double*[9], Kokkos::LayoutRight, double_1d_9_lr)
+ KOKKOS_DEVICE_DUALVIEW(KK_FLOAT**, LMPDeviceLayout, kkfloat_2d)
+ KOKKOS_DEVICE_DUALVIEW(KK_FLOAT**, Kokkos::LayoutRight, kkfloat_2d_lr)
+ KOKKOS_DEVICE_DUALVIEW(KK_FLOAT**, LMPDeviceType::array_layout, kkfloat_2d_dl)
+@@ -1267,6 +1268,9 @@ typedef TransformView<KK_FLOAT*[6], double*[6], LMPDeviceLayout> ttransform_kkfl
+ typedef TransformView<KK_ACC_FLOAT*[6], double*[6], LMPDeviceLayout> ttransform_kkacc_1d_6;
+ typedef TransformView<KK_ACC_FLOAT*[9], double*[9], LMPDeviceLayout> ttransform_kkacc_1d_9;
+ 
++using ttransform_double_1d_3_lr = TransformView<double*[3], double*[3], Kokkos::LayoutRight>;
++using ttransform_double_1d_9_lr = TransformView<double*[9], double*[9], Kokkos::LayoutRight>;
++
+ // 3D view types
+ 
+ KOKKOS_DEVICE_DUALVIEW(int***, LMPDeviceLayout, int_3d)
+@@ -1337,6 +1341,7 @@ KOKKOS_HOST_DUALVIEW(double*[2], Kokkos::LayoutRight, double_1d_2_lr)
+ KOKKOS_HOST_DUALVIEW(double*[3], Kokkos::LayoutRight, double_1d_3_lr)
+ KOKKOS_HOST_DUALVIEW(double*[4], Kokkos::LayoutRight, double_1d_4_lr)
+ KOKKOS_HOST_DUALVIEW(double*[6], Kokkos::LayoutRight, double_1d_6_lr)
++KOKKOS_HOST_DUALVIEW(double*[9], Kokkos::LayoutRight, double_1d_9_lr)
+ KOKKOS_HOST_DUALVIEW(KK_FLOAT**, LMPDeviceLayout, kkfloat_2d)
+ KOKKOS_HOST_DUALVIEW(KK_FLOAT**, Kokkos::LayoutRight, kkfloat_2d_lr)
+ KOKKOS_HOST_DUALVIEW(KK_FLOAT**, LMPDeviceType::array_layout, kkfloat_2d_dl)
+diff --git a/src/atom.cpp b/src/atom.cpp
+index 92432a0..5b343b3 100644
+--- a/src/atom.cpp
++++ b/src/atom.cpp
+@@ -124,6 +124,7 @@ Atom::Atom(LAMMPS *_lmp) : Pointers(_lmp), atom_style(nullptr), avec(nullptr)
+ 
+   q = nullptr;
+   mu = nullptr;
++  bec = bec_dipole = nullptr;
+ 
+   // finite-size particles
+ 
+@@ -418,6 +419,8 @@ void Atom::peratom_create()
+ 
+   add_peratom("rmass",&rmass,DOUBLE,0);
+   add_peratom("q",&q,DOUBLE,0);
++  add_peratom("bec",&bec,DOUBLE,9);
++  add_peratom("bec_dipole",&bec_dipole,DOUBLE,3);
+   add_peratom("mu",&mu,DOUBLE,4);
+   add_peratom("mu3",&mu,DOUBLE,3);     // just first 3 values of mu[4]
+ 
+@@ -650,6 +653,7 @@ void Atom::set_atomflag_defaults()
+   peri_flag = electron_flag = sph_flag = 0;
+   molecule_flag = molindex_flag = molatom_flag = 0;
+   q_flag = mu_flag = 0;
++  bec_flag = 0;
+   rmass_flag = radius_flag = omega_flag = torque_flag = angmom_flag = 0;
+   temperature_flag = heatflow_flag = 0;
+   vfrac_flag = spin_flag = eradius_flag = ervel_flag = erforce_flag = 0;
+@@ -3092,6 +3096,8 @@ void *Atom::extract(const char *name)
+   if (strcmp(name,"f") == 0) return (void *) f;
+   if (strcmp(name,"q") == 0) return (void *) q;
+   if (strcmp(name,"mu") == 0) return (void *) mu;
++  if (strcmp(name,"bec") == 0) return (void *) bec;
++  if (strcmp(name,"bec_dipole") == 0) return (void *) bec_dipole;
+   if (strcmp(name,"omega") == 0) return (void *) omega;
+   if (strcmp(name,"angmom") == 0) return (void *) angmom;
+   if (strcmp(name,"torque") == 0) return (void *) torque;
+@@ -3262,6 +3268,7 @@ int Atom::extract_datatype(const char *name)
+   if (strcmp(name,"f") == 0) return LAMMPS_DOUBLE_2D;
+   if (strcmp(name,"q") == 0) return LAMMPS_DOUBLE;
+   if (strcmp(name,"mu") == 0) return LAMMPS_DOUBLE_2D;
++  if (strcmp(name,"bec") == 0 || strcmp(name,"bec_dipole") == 0) return LAMMPS_DOUBLE_2D;
+   if (strcmp(name,"omega") == 0) return LAMMPS_DOUBLE_2D;
+   if (strcmp(name,"angmom") == 0) return LAMMPS_DOUBLE_2D;
+   if (strcmp(name,"torque") == 0) return LAMMPS_DOUBLE_2D;
+@@ -3428,6 +3435,7 @@ int Atom::extract_size(const char *name, int type)
+       }
+       if (strcmp(name,"f") == 0) return nall;
+       if (strcmp(name,"mu") == 0) return nall;
++      if (strcmp(name,"bec") == 0 || strcmp(name,"bec_dipole") == 0) return nlocal;
+       if (strcmp(name,"omega") == 0) {
+         if (ghost_vel) return nall;
+         else return nlocal;
+@@ -3467,6 +3475,8 @@ int Atom::extract_size(const char *name, int type)
+       if (strcmp(name,"v") == 0) return 3;
+       if (strcmp(name,"f") == 0) return 3;
+       if (strcmp(name,"mu") == 0) return 4;
++      if (strcmp(name,"bec") == 0) return 9;
++      if (strcmp(name,"bec_dipole") == 0) return 3;
+       if (strcmp(name,"omega") == 0) return 3;
+       if (strcmp(name,"angmom") == 0) return 3;
+       if (strcmp(name,"torque") == 0) return 3;
+diff --git a/src/atom.h b/src/atom.h
+index 66633e2..cb82feb 100644
+--- a/src/atom.h
++++ b/src/atom.h
+@@ -79,6 +79,7 @@ class Atom : protected Pointers {
+ 
+   double *rmass;
+   double *q, **mu;
++  double **bec, **bec_dipole;
+ 
+   // finite-size particles
+ 
+@@ -197,6 +198,7 @@ class Atom : protected Pointers {
+ 
+   int molecule_flag, molindex_flag, molatom_flag;
+   int q_flag, mu_flag;
++  int bec_flag;
+   int rmass_flag, radius_flag, omega_flag, torque_flag, angmom_flag, quat_flag;
+   int temperature_flag, heatflow_flag;
+   int vfrac_flag, spin_flag, eradius_flag, ervel_flag, erforce_flag;
+diff --git a/src/atom_masks.h b/src/atom_masks.h
+index 01530b5..f953e42 100644
+--- a/src/atom_masks.h
++++ b/src/atom_masks.h
+@@ -84,4 +84,9 @@
+ 
+ #define MASS_MASK      0x0000040000000000
+ 
++// DREAM Born effective charge and integrated dipole
++
++#define BEC_MASK        0x0000080000000000
++#define BEC_DIPOLE_MASK 0x0000100000000000
++
+ #endif
+diff --git a/src/compute_property_atom.cpp b/src/compute_property_atom.cpp
+index 01710a8..2756b85 100644
+--- a/src/compute_property_atom.cpp
++++ b/src/compute_property_atom.cpp
+@@ -16,6 +16,8 @@
+ 
+ #include "arg_info.h"
+ #include "atom.h"
++#include "atom_masks.h"
++#include "dream_bec.h"
+ #include "atom_vec.h"
+ #include "atom_vec_body.h"
+ #include "atom_vec_ellipsoid.h"
+@@ -66,8 +68,19 @@ ComputePropertyAtom::ComputePropertyAtom(LAMMPS *lmp, int narg, char **arg) :
+     val.index = 0;
+     val.colindex = 0;
+     val.pack_choice = nullptr;
++    const int bec_field = DREAM::field_index(arg[iarg]);
+ 
+-    if (strcmp(arg[iarg],"id") == 0) {
++    if (bec_field >= 0) {
++      if (!atom->bec_flag)
++        error->all(FLERR, iarg, "Compute property/atom {} is not available", arg[iarg]);
++      static constexpr void (ComputePropertyAtom::*packers[])(int) = {
++        &ComputePropertyAtom::pack_bec<0>, &ComputePropertyAtom::pack_bec<1>, &ComputePropertyAtom::pack_bec<2>,
++        &ComputePropertyAtom::pack_bec<3>, &ComputePropertyAtom::pack_bec<4>, &ComputePropertyAtom::pack_bec<5>,
++        &ComputePropertyAtom::pack_bec<6>, &ComputePropertyAtom::pack_bec<7>, &ComputePropertyAtom::pack_bec<8>,
++        &ComputePropertyAtom::pack_bec<9>, &ComputePropertyAtom::pack_bec<10>, &ComputePropertyAtom::pack_bec<11>,
++      };
++      val.pack_choice = packers[bec_field];
++    } else if (strcmp(arg[iarg],"id") == 0) {
+       val.pack_choice = &ComputePropertyAtom::pack_id;
+     } else if (strcmp(arg[iarg],"mol") == 0) {
+       if (!atom->molecule_flag)
+@@ -1153,6 +1166,18 @@ void ComputePropertyAtom::pack_q(int n)
+ 
+ /* ---------------------------------------------------------------------- */
+ 
++template<int Field>
++void ComputePropertyAtom::pack_bec(int n)
++{
++  atom->sync_host_arrays(Field < 3 ? BEC_DIPOLE_MASK : BEC_MASK);
++  for (int i = 0; i < atom->nlocal; ++i) {
++    buf[n] = (atom->mask[i] & groupbit) ? DREAM::value(atom, i, Field) : 0.0;
++    n += nvalues;
++  }
++}
++
++/* ---------------------------------------------------------------------- */
++
+ void ComputePropertyAtom::pack_mux(int n)
+ {
+   double **mu = atom->mu;
+diff --git a/src/compute_property_atom.h b/src/compute_property_atom.h
+index 392cabc..da94670 100644
+--- a/src/compute_property_atom.h
++++ b/src/compute_property_atom.h
+@@ -92,6 +92,7 @@ class ComputePropertyAtom : public Compute {
+   void pack_fy(int);
+   void pack_fz(int);
+   void pack_q(int);
++  template<int Field> void pack_bec(int);
+   void pack_mux(int);
+   void pack_muy(int);
+   void pack_muz(int);
+diff --git a/src/dump_custom.cpp b/src/dump_custom.cpp
+index 5550dce..e03aaad 100644
+--- a/src/dump_custom.cpp
++++ b/src/dump_custom.cpp
+@@ -16,6 +16,8 @@
+ 
+ #include "arg_info.h"
+ #include "atom.h"
++#include "atom_masks.h"
++#include "dream_bec.h"
+ #include "compute.h"
+ #include "domain.h"
+ #include "error.h"
+@@ -44,6 +46,7 @@ enum{ID,MOL,PROC,PROCP1,TYPE,TYPELABEL,ELEMENT,MASS,
+      IX,IY,IZ,
+      VX,VY,VZ,FX,FY,FZ,
+      Q,MUX,MUY,MUZ,MU,RADIUS,DIAMETER,
++     BEC_BEGIN,BEC_END=BEC_BEGIN+11,
+      OMEGAX,OMEGAY,OMEGAZ,ANGMOMX,ANGMOMY,ANGMOMZ,
+      TQX,TQY,TQZ,
+      COMPUTE,FIX,VARIABLE,IVEC,DVEC,IARRAY,DARRAY};
+@@ -1093,6 +1096,15 @@ int DumpCustom::count()
+                      "Threshold for an atom property that isn't allocated");
+         ptr = atom->q;
+         nstride = 1;
++      } else if (thresh_array[ithresh] >= BEC_BEGIN && thresh_array[ithresh] <= BEC_END) {
++        if (!atom->bec_flag)
++          error->all(FLERR, Error::NOLASTLINE,
++                     "Threshold for an atom property that isn't allocated");
++        const int field = thresh_array[ithresh] - BEC_BEGIN;
++        const bool dipole = field < 3;
++        atom->sync_host_arrays(dipole ? BEC_DIPOLE_MASK : BEC_MASK);
++        ptr = nlocal ? (dipole ? &atom->bec_dipole[0][field] : &atom->bec[0][field - 3]) : nullptr;
++        nstride = dipole ? 3 : 9;
+       } else if (thresh_array[ithresh] == MUX) {
+         if (!atom->mu_flag)
+           error->all(FLERR, Error::NOLASTLINE,
+@@ -1465,8 +1477,20 @@ int DumpCustom::parse_fields(int narg, char **arg)
+ 
+     // only attempt to parse first two fields for dump image/movie
+     if ((iarg == 2) && ((strcmp(style,"image") == 0) || (strcmp(style,"movie") == 0))) return 2;
++    const int bec_field = DREAM::field_index(arg[iarg]);
+ 
+-    if (strcmp(arg[iarg],"id") == 0) {
++    if (bec_field >= 0) {
++      if (!atom->bec_flag)
++        error->all(FLERR, errptr, "Dumping an atom property that isn't allocated");
++      static constexpr void (DumpCustom::*packers[])(int) = {
++        &DumpCustom::pack_bec<0>, &DumpCustom::pack_bec<1>, &DumpCustom::pack_bec<2>,
++        &DumpCustom::pack_bec<3>, &DumpCustom::pack_bec<4>, &DumpCustom::pack_bec<5>,
++        &DumpCustom::pack_bec<6>, &DumpCustom::pack_bec<7>, &DumpCustom::pack_bec<8>,
++        &DumpCustom::pack_bec<9>, &DumpCustom::pack_bec<10>, &DumpCustom::pack_bec<11>,
++      };
++      pack_choice[iarg] = packers[bec_field];
++      vtype[iarg] = Dump::DOUBLE;
++    } else if (strcmp(arg[iarg],"id") == 0) {
+       pack_choice[iarg] = &DumpCustom::pack_id;
+       if (sizeof(tagint) == sizeof(smallint)) vtype[iarg] = Dump::INT;
+       else vtype[iarg] = Dump::BIGINT;
+@@ -2038,7 +2062,9 @@ int DumpCustom::modify_param(int narg, char **arg)
+     // set attribute type of threshold
+     // customize by adding to if statement
+ 
+-    if (strcmp(arg[1],"id") == 0) thresh_array[nthresh] = ID;
++    const int bec_field = DREAM::field_index(arg[1]);
++    if (bec_field >= 0) thresh_array[nthresh] = BEC_BEGIN + bec_field;
++    else if (strcmp(arg[1],"id") == 0) thresh_array[nthresh] = ID;
+     else if (strcmp(arg[1],"mol") == 0) thresh_array[nthresh] = MOL;
+     else if (strcmp(arg[1],"proc") == 0) thresh_array[nthresh] = PROC;
+     else if (strcmp(arg[1],"procp1") == 0) thresh_array[nthresh] = PROCP1;
+@@ -3163,6 +3189,18 @@ void DumpCustom::pack_q(int n)
+ 
+ /* ---------------------------------------------------------------------- */
+ 
++template<int Field>
++void DumpCustom::pack_bec(int n)
++{
++  atom->sync_host_arrays(Field < 3 ? BEC_DIPOLE_MASK : BEC_MASK);
++  for (int i = 0; i < nchoose; ++i) {
++    buf[n] = DREAM::value(atom, clist[i], Field);
++    n += size_one;
++  }
++}
++
++/* ---------------------------------------------------------------------- */
++
+ void DumpCustom::pack_mux(int n)
+ {
+   double **mu = atom->mu;
+diff --git a/src/dump_custom.h b/src/dump_custom.h
+index b9c0262..31ada4a 100644
+--- a/src/dump_custom.h
++++ b/src/dump_custom.h
+@@ -205,6 +205,7 @@ class DumpCustom : public Dump {
+ 
+   void pack_q(int);
+ 
++  template<int Field> void pack_bec(int);
+   void pack_mux(int);
+   void pack_muy(int);
+   void pack_muz(int);
+diff --git a/src/fix_efield.cpp b/src/fix_efield.cpp
+index 655bf46..32e4128 100644
+--- a/src/fix_efield.cpp
++++ b/src/fix_efield.cpp
+@@ -19,6 +19,7 @@
+ #include "fix_efield.h"
+ 
+ #include "atom.h"
++#include "atom_masks.h"
+ #include "comm.h"
+ #include "domain.h"
+ #include "error.h"
+@@ -33,6 +34,7 @@
+ #include "variable.h"
+ 
+ #include <cstring>
++#include <string_view>
+ 
+ using namespace LAMMPS_NS;
+ using namespace FixConst;
+@@ -105,6 +107,22 @@ FixEfield::FixEfield(LAMMPS *lmp, int narg, char **arg) :
+       } else
+         error->all(FLERR, "Unsupported argument for fix {} energy command: {}", style, arg[iarg]);
+       iarg += 2;
++    } else if (strcmp(arg[iarg], "coupling") == 0) {
++      if (iarg + 2 > narg)
++        utils::missing_cmd_args(FLERR, std::string("fix ") + style + " coupling", error);
++      const std::string_view mode(arg[iarg + 1]);
++      if (mode == "auto") coupling = COUPLING_AUTO;
++      else if (mode == "charge") coupling = COUPLING_CHARGE;
++      else if (mode == "bec") coupling = COUPLING_BEC;
++      else if (mode == "both") coupling = COUPLING_BOTH;
++      else error->all(FLERR, "Unknown coupling mode for fix {}: {}", style, mode);
++      iarg += 2;
++    } else if (strcmp(arg[iarg], "piezo") == 0) {
++      if (iarg + 2 > narg)
++        utils::missing_cmd_args(FLERR, std::string("fix ") + style + " piezo", error);
++      if (strcmp(arg[iarg + 1], "no") != 0)
++        error->all(FLERR, "Fix {} supports only piezo no", style);
++      iarg += 2;
+     } else if (strcmp(arg[iarg], "potential") == 0) {
+       if (iarg + 2 > narg)
+         utils::missing_cmd_args(FLERR, std::string("fix ") + style + "potential", error);
+@@ -162,10 +180,19 @@ int FixEfield::setmask()
+ 
+ void FixEfield::init()
+ {
+-  qflag = muflag = 0;
+-  if (atom->q_flag) qflag = 1;
+-  if (atom->mu_flag && atom->torque_flag) muflag = 1;
+-  if (!qflag && !muflag) error->all(FLERR, "Fix {} requires atom attribute q or mu", style);
++  qflag = atom->q_flag && coupling != COUPLING_BEC;
++  becflag = atom->bec_flag && coupling != COUPLING_CHARGE;
++  muflag = atom->mu_flag && atom->torque_flag;
++  if ((coupling == COUPLING_CHARGE || coupling == COUPLING_BOTH) && !qflag)
++    error->all(FLERR, "Fix {} coupling mode requires atom attribute q", style);
++  if ((coupling == COUPLING_BEC || coupling == COUPLING_BOTH) && !becflag)
++    error->all(FLERR, "Fix {} coupling mode requires atom attribute bec", style);
++  if (coupling == COUPLING_AUTO && qflag && becflag && comm->me == 0)
++    error->warning(FLERR, "Fix {} coupling auto applies both q and BEC", style);
++  if (!qflag && !muflag && !becflag)
++    error->all(FLERR, "Fix {} requires atom attribute q, mu or bec", style);
++  if (becflag && !qflag && pstr)
++    error->all(FLERR, "Fix {} potential requires charge coupling", style);
+ 
+   // warn if TIP4P pair style is used with plain fix efield
+   if ((strcmp(style, "efield") == 0) && (comm->me == 0)) {
+@@ -441,6 +468,45 @@ void FixEfield::post_force(int vflag)
+         }
+     }
+   }
++
++  if (becflag) {
++    atom->sync_host_arrays(BEC_MASK | BEC_DIPOLE_MASK);
++    for (int i = 0; i < nlocal; ++i) {
++      if (!(mask[i] & groupbit)) continue;
++      if (region && !region->match(x[i][0], x[i][1], x[i][2])) continue;
++      const double e[3] = {
++          xstyle == ATOM ? qe2f * efield[i][0] : ex,
++          ystyle == ATOM ? qe2f * efield[i][1] : ey,
++          zstyle == ATOM ? qe2f * efield[i][2] : ez};
++      const double *z = atom->bec[i];
++      // F = Z^T E. The integrated P gives path-dependent work for a changing Z.
++      fx = z[0] * e[0] + z[3] * e[1] + z[6] * e[2];
++      fy = z[1] * e[0] + z[4] * e[1] + z[7] * e[2];
++      fz = z[2] * e[0] + z[5] * e[1] + z[8] * e[2];
++      f[i][0] += fx;
++      f[i][1] += fy;
++      f[i][2] += fz;
++      fsum[1] += fx;
++      fsum[2] += fy;
++      fsum[3] += fz;
++      if (varflag == CONSTANT) {
++        const double *p = atom->bec_dipole[i];
++        fsum[0] -= p[0] * ex + p[1] * ey + p[2] * ez;
++      } else if (estyle == ATOM && !qflag) {
++        fsum[0] += efield[i][3];
++      }
++      if (evflag) {
++        domain->unmap(x[i], image[i], unwrap);
++        v[0] = fx * unwrap[0];
++        v[1] = fy * unwrap[1];
++        v[2] = fz * unwrap[2];
++        v[3] = fx * unwrap[1];
++        v[4] = fx * unwrap[2];
++        v[5] = fy * unwrap[2];
++        v_tally(i, v);
++      }
++    }
++  }
+ }
+ 
+ /* ---------------------------------------------------------------------- */
+diff --git a/src/fix_efield.h b/src/fix_efield.h
+index 26182b0..9743f9b 100644
+--- a/src/fix_efield.h
++++ b/src/fix_efield.h
+@@ -56,6 +56,9 @@ class FixEfield : public Fix {
+   int ilevel_respa;
+   double qe2f;
+   int qflag, muflag;
++  enum { COUPLING_AUTO, COUPLING_CHARGE, COUPLING_BEC, COUPLING_BOTH };
++  int coupling = COUPLING_AUTO;
++  int becflag = 0;
+ 
+   int maxatom, maxatom_energy;
+   double **efield;
+diff --git a/src/fix_nh.cpp b/src/fix_nh.cpp
+index 5b89194..cc1f57a 100644
+--- a/src/fix_nh.cpp
++++ b/src/fix_nh.cpp
+@@ -21,6 +21,7 @@
+ #include "comm.h"
+ #include "compute.h"
+ #include "domain.h"
++#include "dream_bec.h"
+ #include "error.h"
+ #include "fix_deform.h"
+ #include "force.h"
+@@ -674,6 +675,8 @@ FixNH::~FixNH()
+ {
+   if (copymode) return;
+ 
++  memory->destroy(bec_xold);
++
+   delete[] id_dilate;
+   delete irregular;
+ 
+@@ -950,6 +953,8 @@ void FixNH::initial_integrate(int /*vflag*/)
+ 
+   nve_v();
+ 
++  begin_bec_displacement();
++
+   // remap simulation box by 1/2 step
+ 
+   if (pstat_flag) remap();
+@@ -963,6 +968,7 @@ void FixNH::initial_integrate(int /*vflag*/)
+     remap();
+     if (kspace_flag) force->kspace->setup();
+   }
++  end_bec_displacement();
+ }
+ 
+ /* ----------------------------------------------------------------------
+@@ -1070,9 +1076,11 @@ void FixNH::initial_integrate_respa(int /*vflag*/, int ilevel, int /*iloop*/)
+   // if barostat, perform 1/2 step remap before and after
+ 
+   if (ilevel == 0) {
++    begin_bec_displacement();
+     if (pstat_flag) remap();
+     nve_x();
+     if (pstat_flag) remap();
++    end_bec_displacement();
+   }
+ }
+ 
+@@ -2312,6 +2320,32 @@ void FixNH::nve_v()
+    perform full-step update of positions
+ -----------------------------------------------------------------------*/
+ 
++void FixNH::begin_bec_displacement()
++{
++  if (!atom->bec_flag) return;
++  if (atom->nmax > bec_xold_max) {
++    bec_xold_max = atom->nmax;
++    memory->grow(bec_xold, bec_xold_max, 3, "fix_nh:bec_xold");
++  }
++  for (int i = 0; i < atom->nlocal; ++i)
++    domain->unmap(atom->x[i], atom->image[i], bec_xold[i]);
++}
++
++/* ---------------------------------------------------------------------- */
++
++void FixNH::end_bec_displacement()
++{
++  if (!atom->bec_flag) return;
++  for (int i = 0; i < atom->nlocal; ++i) {
++    double current[3];
++    domain->unmap(atom->x[i], atom->image[i], current);
++    DREAM::add_displacement(atom, i, current[0] - bec_xold[i][0],
++                            current[1] - bec_xold[i][1], current[2] - bec_xold[i][2]);
++  }
++}
++
++/* ---------------------------------------------------------------------- */
++
+ void FixNH::nve_x()
+ {
+   double **x = atom->x;
+@@ -2669,5 +2703,6 @@ double FixNH::memory_usage()
+ {
+   double bytes = 0.0;
+   if (irregular) bytes += irregular->memory_usage();
++  bytes += 3.0 * bec_xold_max * sizeof(double);
+   return bytes;
+ }
+diff --git a/src/fix_nh.h b/src/fix_nh.h
+index 5592cde..83a39dc 100644
+--- a/src/fix_nh.h
++++ b/src/fix_nh.h
+@@ -44,6 +44,11 @@ class FixNH : public Fix {
+   double memory_usage() override;
+ 
+  protected:
++  double **bec_xold = nullptr;
++  int bec_xold_max = 0;
++  void begin_bec_displacement();
++  void end_bec_displacement();
++
+   int dimension, which;
+   double dtv, dtf, dthalf, dt4, dt8, dto;
+   double boltz, nktv2p, tdof;
+diff --git a/src/fix_nve.cpp b/src/fix_nve.cpp
+index f901f96..25770bc 100644
+--- a/src/fix_nve.cpp
++++ b/src/fix_nve.cpp
+@@ -15,6 +15,7 @@
+ #include "fix_nve.h"
+ 
+ #include "atom.h"
++#include "dream_bec.h"
+ #include "error.h"
+ #include "force.h"
+ #include "respa.h"
+@@ -91,6 +92,9 @@ void FixNVE::initial_integrate(int /*vflag*/)
+         x[i][0] += dtv * v[i][0];
+         x[i][1] += dtv * v[i][1];
+         x[i][2] += dtv * v[i][2];
++        if (atom->bec_flag)
++          DREAM::add_displacement(atom, i, dtv * v[i][0],
++                                  dtv * v[i][1], dtv * v[i][2]);
+       }
+ 
+   } else {
+@@ -103,6 +107,9 @@ void FixNVE::initial_integrate(int /*vflag*/)
+         x[i][0] += dtv * v[i][0];
+         x[i][1] += dtv * v[i][1];
+         x[i][2] += dtv * v[i][2];
++        if (atom->bec_flag)
++          DREAM::add_displacement(atom, i, dtv * v[i][0],
++                                  dtv * v[i][1], dtv * v[i][2]);
+       }
+   }
+ }
+diff --git a/src/library.cpp b/src/library.cpp
+index 5b06ee2..14b4c8e 100644
+--- a/src/library.cpp
++++ b/src/library.cpp
+@@ -1634,6 +1634,7 @@ int lammps_extract_setting(void *handle, const char *keyword)
+   if (strcmp(keyword,"molecule_flag") == 0) return lmp->atom->molecule_flag;
+   if (strcmp(keyword,"q_flag") == 0) return lmp->atom->q_flag;
+   if (strcmp(keyword,"mu_flag") == 0) return lmp->atom->mu_flag;
++  if (strcmp(keyword,"bec_flag") == 0) return lmp->atom->bec_flag;
+   if (strcmp(keyword,"rmass_flag") == 0) return lmp->atom->rmass_flag;
+   if (strcmp(keyword,"radius_flag") == 0) return lmp->atom->radius_flag;
+ 
+@@ -1747,6 +1748,7 @@ int lammps_extract_global_datatype(void * /*handle*/, const char *name)
+   if (strcmp(name,"nextsort") == 0) return LAMMPS_BIGINT;
+ 
+   if (strcmp(name,"q_flag") == 0) return LAMMPS_INT;
++  if (strcmp(name,"bec_flag") == 0) return LAMMPS_INT;
+ 
+   if (strcmp(name,"units") == 0) return LAMMPS_STRING;
+   if (strcmp(name,"atom_style") == 0) return LAMMPS_STRING;
+@@ -2350,6 +2352,7 @@ void *lammps_extract_global(void *handle, const char *name)
+   if (strcmp(name,"special_coul") == 0) return (void *) lmp->force->special_coul;
+ 
+   if (strcmp(name,"q_flag") == 0) return (void *) &lmp->atom->q_flag;
++  if (strcmp(name,"bec_flag") == 0) return (void *) &lmp->atom->bec_flag;
+ 
+   if (strcmp(name,"neigh_skin") == 0) return (void *) &lmp->neighbor->skin;
+   if (strcmp(name,"neigh_cutmin") == 0) return (void *) &lmp->neighbor->cutneighmin;
+diff --git a/src/min_fire.cpp b/src/min_fire.cpp
+index cc8bee4..5a5639a 100644
+--- a/src/min_fire.cpp
++++ b/src/min_fire.cpp
+@@ -24,6 +24,7 @@
+ #include "min_fire.h"
+ 
+ #include "atom.h"
++#include "dream_bec.h"
+ #include "comm.h"
+ #include "error.h"
+ #include "force.h"
+@@ -318,6 +319,9 @@ template <int INTEGRATOR, bool ABCFLAG> int MinFire::run_iterate(int maxiter)
+           x[i][0] -= 0.5 * dt * v[i][0];
+           x[i][1] -= 0.5 * dt * v[i][1];
+           x[i][2] -= 0.5 * dt * v[i][2];
++          if (atom->bec_flag)
++            DREAM::add_displacement(atom, i, -0.5 * dt * v[i][0],
++                                    -0.5 * dt * v[i][1], -0.5 * dt * v[i][2]);
+         }
+       }
+ 
+@@ -408,6 +412,9 @@ template <int INTEGRATOR, bool ABCFLAG> int MinFire::run_iterate(int maxiter)
+           x[i][0] += dtv * v[i][0];
+           x[i][1] += dtv * v[i][1];
+           x[i][2] += dtv * v[i][2];
++          if (atom->bec_flag)
++            DREAM::add_displacement(atom, i, dtv * v[i][0],
++                                    dtv * v[i][1], dtv * v[i][2]);
+         }
+       } else {
+         for (int i = 0; i < nlocal; i++) {
+@@ -429,6 +436,9 @@ template <int INTEGRATOR, bool ABCFLAG> int MinFire::run_iterate(int maxiter)
+           x[i][0] += dtv * v[i][0];
+           x[i][1] += dtv * v[i][1];
+           x[i][2] += dtv * v[i][2];
++          if (atom->bec_flag)
++            DREAM::add_displacement(atom, i, dtv * v[i][0],
++                                    dtv * v[i][1], dtv * v[i][2]);
+         }
+       }
+ 
+@@ -462,6 +472,9 @@ template <int INTEGRATOR, bool ABCFLAG> int MinFire::run_iterate(int maxiter)
+           x[i][0] += dtv * v[i][0];
+           x[i][1] += dtv * v[i][1];
+           x[i][2] += dtv * v[i][2];
++          if (atom->bec_flag)
++            DREAM::add_displacement(atom, i, dtv * v[i][0],
++                                    dtv * v[i][1], dtv * v[i][2]);
+         }
+       } else {
+         for (int i = 0; i < nlocal; i++) {
+@@ -483,6 +496,9 @@ template <int INTEGRATOR, bool ABCFLAG> int MinFire::run_iterate(int maxiter)
+           x[i][0] += dtv * v[i][0];
+           x[i][1] += dtv * v[i][1];
+           x[i][2] += dtv * v[i][2];
++          if (atom->bec_flag)
++            DREAM::add_displacement(atom, i, dtv * v[i][0],
++                                    dtv * v[i][1], dtv * v[i][2]);
+         }
+       }
+ 
+@@ -529,6 +545,9 @@ template <int INTEGRATOR, bool ABCFLAG> int MinFire::run_iterate(int maxiter)
+           x[i][0] += dtv * v[i][0];
+           x[i][1] += dtv * v[i][1];
+           x[i][2] += dtv * v[i][2];
++          if (atom->bec_flag)
++            DREAM::add_displacement(atom, i, dtv * v[i][0],
++                                    dtv * v[i][1], dtv * v[i][2]);
+           v[i][0] += dtfm * f[i][0];
+           v[i][1] += dtfm * f[i][1];
+           v[i][2] += dtfm * f[i][2];
+@@ -550,6 +569,9 @@ template <int INTEGRATOR, bool ABCFLAG> int MinFire::run_iterate(int maxiter)
+           x[i][0] += dtv * v[i][0];
+           x[i][1] += dtv * v[i][1];
+           x[i][2] += dtv * v[i][2];
++          if (atom->bec_flag)
++            DREAM::add_displacement(atom, i, dtv * v[i][0],
++                                    dtv * v[i][1], dtv * v[i][2]);
+           v[i][0] += dtfm * f[i][0];
+           v[i][1] += dtfm * f[i][1];
+           v[i][2] += dtfm * f[i][2];
+diff --git a/src/min_quickmin.cpp b/src/min_quickmin.cpp
+index 6e314cc..b179b78 100644
+--- a/src/min_quickmin.cpp
++++ b/src/min_quickmin.cpp
+@@ -15,6 +15,7 @@
+ #include "min_quickmin.h"
+ 
+ #include "atom.h"
++#include "dream_bec.h"
+ #include "error.h"
+ #include "force.h"
+ #include "output.h"
+@@ -174,6 +175,9 @@ int MinQuickMin::iterate(int maxiter)
+         x[i][0] += dtv * v[i][0];
+         x[i][1] += dtv * v[i][1];
+         x[i][2] += dtv * v[i][2];
++        if (atom->bec_flag)
++          DREAM::add_displacement(atom, i, dtv * v[i][0],
++                                  dtv * v[i][1], dtv * v[i][2]);
+         v[i][0] += dtfm * f[i][0];
+         v[i][1] += dtfm * f[i][1];
+         v[i][2] += dtfm * f[i][2];
+@@ -184,6 +188,9 @@ int MinQuickMin::iterate(int maxiter)
+         x[i][0] += dtv * v[i][0];
+         x[i][1] += dtv * v[i][1];
+         x[i][2] += dtv * v[i][2];
++        if (atom->bec_flag)
++          DREAM::add_displacement(atom, i, dtv * v[i][0],
++                                  dtv * v[i][1], dtv * v[i][2]);
+         v[i][0] += dtfm * f[i][0];
+         v[i][1] += dtfm * f[i][1];
+         v[i][2] += dtfm * f[i][2];

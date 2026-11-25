@@ -1,0 +1,69 @@
+name: Bug Report
+description: Report a reproducible bug in SpinGNN2 (training, data conversion, native engine, or LAMMPS)
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: starred
+    attributes:
+      label: Repository Star / 是否已 Star 本仓库
+      description: Please confirm whether you have starred the [Hyyu-Lab/SpinGNN](https://github.com/Hyyu-Lab/SpinGNN) repository (supporting open-source maintenance). / 请确认是否已为本仓库点亮 Star，感谢支持开源项目维护！
+      options:
+        - label: Yes, I have starred Hyyu-Lab/SpinGNN (是，我已 Star 本仓库)
+          required: false
+        - label: Not yet (暂未 Star)
+          required: false
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component / 所属模块
+      options:
+        - spingnn-data (VASP 5/6 converter)
+        - SpinGNN++ v1 training (src/core, src/models, spingnn-train)
+        - SpinGNN2 v2 / PhysMuon / symmetry (src/spingnn2)
+        - Native C++/Kokkos engine & JIT (libspingnn2)
+        - Modern LAMMPS overlay & GPST (lammps_spingnn2)
+        - Installation / Docker / Docs / Skills
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment / 运行环境
+      description: OS, Python, PyTorch, CUDA, GPU model, compiler, MPI, and SpinGNN2 version/commit.
+      placeholder: |
+        - SpinGNN2 version / commit: v2.0.0
+        - OS: Ubuntu 22.04
+        - Python / PyTorch: 3.10 / 2.11.0+cu128
+        - GPU / CUDA: RTX 5090 / CUDA 12.8
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction Steps / 复现步骤
+      description: Provide a minimal config/input and exact command. Remove private paths and unpublished data.
+      placeholder: |
+        ```bash
+        spingnn-train config.yaml
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected vs. Observed Behavior / 预期与实际现象
+      description: Include complete tracebacks or LAMMPS error messages.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context / 补充信息
+      description: Do not attach private datasets, unpublished models, or credentials.

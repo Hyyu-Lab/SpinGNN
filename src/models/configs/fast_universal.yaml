@@ -1,0 +1,148 @@
+# This file serves as a fast setting input file for Allegro.
+# Usually, you can only adjust tags in Important part
+
+# VERY IMPORTANT. Try different setting below
+run_name: base
+batch_size: 32
+
+# Network
+l_max: 2
+parity: o3_full
+num_layers: 3
+env_embed_multiplicity: 32
+node_embedding_dimension: 64
+num_basis: 32
+two_body_latent_mlp_latent_dimensions: [128, 128, 256, 512, 1024]
+latent_mlp_latent_dimensions: [1024, 1024, 1024] # Equal to last number of two_body_latent_mlp_latent_dimensions
+
+edge_eng_mlp_latent_dimensions: [128]
+
+per_species_rescale_scales_trainable: true
+per_species_rescale_shifts_trainable: true
+per_species_rescale_trainable: true
+
+lauto_loss: false
+loss_coeffs:
+  stress: 0.1
+  forces: 1.
+  total_energy:
+    - 1.
+    - PerAtomMSELoss
+
+# IMPORTANT: set it init. No change afterwards usually
+r_max: 5.0
+allow_tf32: false # Turn on for A100 but off for V100
+root: results/
+append: false
+wandb_project: universal
+
+# Data 187,687 in total
+n_train: 168918 # Please leave some data for test which means n_train + n_val < total data
+n_val: 9,384 # Suggest to devide with 80% 10% 10% or 60% 20% 20%
+dataset_file_name: ../data/data.extxyz
+chemical_symbols:
+  - universal
+  - 90
+
+# Train
+learning_rate: 0.002
+
+lr_scheduler_name: ReduceLROnPlateau
+lr_scheduler_patience: 10
+lr_scheduler_factor: 0.5
+
+early_stopping_lower_bounds:
+  LR: 1.0e-6
+
+early_stopping_patiences:
+  validation_loss_awl: 30
+
+# Not so important setting. Keep them as default.
+# general
+metrics_key: validation_loss_awl # or validation_loss
+seed: 123456
+dataset_seed: 123456
+default_dtype: float32
+
+# -- network --
+model_builders:
+  - allegro.model.Allegro_universal
+  - PerSpeciesRescale
+  - ParaStressForceOutput # Stress
+  - RescaleEnergyEtc
+
+avg_num_neighbors: auto
+BesselBasis_trainable: false
+PolynomialCutoff_p: 6
+
+# - start allegro layers -
+# number of tensor product layers, 1-3 usually best, more is more accurate but slower
+embed_initial_edge: true
+two_body_latent_mlp_nonlinearity: silu
+two_body_latent_mlp_initialization: uniform
+latent_mlp_nonlinearity: silu
+latent_mlp_initialization: uniform
+latent_resnet: true
+env_embed_mlp_latent_dimensions: []
+env_embed_mlp_nonlinearity: null
+env_embed_mlp_initialization: uniform
+edge_eng_mlp_initialization: uniform
+edge_eng_mlp_nonlinearity: null
+# - end allegro layers -
+
+# -- data --
+dataset: ase
+ase_args:
+  format: extxyz
+# logging
+wandb: true
+verbose: warning
+
+# training
+max_epochs: 10000000
+train_val_split: random
+
+shuffle: true
+
+use_ema: true
+ema_decay: 0.99
+ema_use_num_updates: true
+
+# loss function
+
+# optimizer
+optimizer_name: Adam
+optimizer_params:
+  amsgrad: false #!!!!
+  betas: !!python/tuple
+    - 0.9
+    - 0.999
+  eps: 1.0e-08
+  weight_decay: 0.
+
+early_stopping_upper_bounds:
+  cumulative_wall: 604800.
+
+early_stopping_ladder_upper_bounds:
+  cumulative_wall: 604800.
+
+# output metrics
+metrics_components:
+  - - stress
+    - mae
+  - - stress
+    - rmse
+  - - forces # key
+    - mae # "rmse" or "mae"
+  - - forces
+    - rmse
+  - - total_energy
+    - mae
+  - - total_energy
+    - rmse
+  - - total_energy
+    - mae
+    - PerAtom: True # if true, energy is normalized by the number of atoms
+  - - total_energy
+    - rmse
+    - PerAtom: True # if true, energy is normalized by the number of atoms

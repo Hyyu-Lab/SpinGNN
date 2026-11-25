@@ -1,0 +1,142 @@
+# Purpose: Spin-Allegro training without spin-orbit coupling.
+# Acceleration: full_fx dynamic compilation and calibrated H100 TF32 are on.
+# Reference H100 Allegro result: 0.092098 -> 0.003936 s/step (23.4x);
+# actual speedup depends on model, batch shape, hardware, and compile cache.
+# Eager fp32 fallback: set spingnn_compile.enabled: false,
+# float32_matmul_precision: highest, and allow_tf32: false.
+# Run from the repository root: spingnn-train example/02_spin_nosoc.yaml
+
+# Update this section for your dataset.
+root: results/spin_nosoc
+run_name: example
+dataset_file_name: ./example/data/spin_nosoc.extxyz
+n_train: 800
+n_val: 100
+chemical_symbol_to_type:
+  Bi: 0
+  Fe: 1
+  O: 2
+r_max: 6.0
+
+# Model. Use the dedicated NoSOC builder: Allegro_soc with lsoc_layer=false
+# still contains a full exchange matrix and magnetic anisotropy terms.
+model_builders:
+  - allegro.model.Allegro_nosoc
+  - PerSpeciesRescale
+  - ParaStressForceSpinOutput
+  - RescaleEnergyEtc
+
+# Spin-rotation-invariant interactions. The Heisenberg contribution is
+# J_ij * (S_i dot S_j); no J matrix or anisotropy tensor is constructed.
+lhb: true
+lbiquadratic: false
+lnosoc_layer: true
+ldelta_learning: false
+lpredict_spin_length: false
+ene_coeff_trainable: false
+ledge_cutoff: false
+
+l_max: 2
+parity: o3_full
+allegro_onlyr_num_layers: 1
+allegro_nosoc_num_layers: 1
+env_embed_multiplicity: 16
+two_body_latent_mlp_latent_dimensions: [64, 128, 128]
+latent_mlp_latent_dimensions: [128, 128]
+edge_onlyr_eng_mlp_latent_dimensions: [128, 64]
+edge_hb_coeff_mlp_latent_dimensions: [128, 64]
+edge_eng_nosoc_mlp_latent_dimensions: [128]
+edge_onlyr_eng_coeff: 1.0
+edge_hb_eng_coeff: 0.05
+edge_eng_nosoc_coeff: 0.05
+
+avg_num_neighbors: auto
+BesselBasis_num_basis: 8
+BesselBasis_trainable: false
+PolynomialCutoff_p: 48
+embed_initial_edge: true
+two_body_latent_mlp_nonlinearity: silu
+two_body_latent_mlp_initialization: uniform
+latent_mlp_nonlinearity: silu
+latent_mlp_initialization: uniform
+latent_resnet: true
+env_embed_mlp_latent_dimensions: []
+env_embed_mlp_nonlinearity: null
+env_embed_mlp_initialization: uniform
+edge_onlyr_eng_mlp_nonlinearity: silu
+edge_onlyr_eng_mlp_initialization: uniform
+edge_hb_coeff_mlp_nonlinearity: silu
+edge_hb_coeff_mlp_initialization: uniform
+edge_eng_nosoc_mlp_nonlinearity: null
+edge_eng_nosoc_initialization: uniform
+
+# Data. Every structure must contain per-atom initial_magmoms.
+dataset: ase
+ase_args:
+  format: extxyz
+train_val_split: random
+shuffle: true
+
+# OSZICAR λ·MW 只有垂直分量，存为 spin_forces_vert，不能当作完整
+# spin_forces 向量。
+# Remove a loss/metric entry if that label is absent from the data.
+loss_coeffs:
+  total_energy:
+    - 10.0
+    - PerAtomMSELoss
+  forces: 1.0
+  stress: 1.0
+  spin_forces_vert: 1.0
+
+metrics_components:
+  - [total_energy, mae, {PerAtom: true}]
+  - [forces, mae]
+  - [stress, mae]
+  - [spin_forces_vert, mae]
+
+batch_size: 1
+max_epochs: 1000000
+learning_rate: 0.001
+optimizer_name: Adam
+optimizer_kwargs:
+  amsgrad: true
+  betas: [0.9, 0.999]
+  eps: 1.0e-08
+  weight_decay: 0.0
+lr_scheduler_name: ReduceLROnPlateau
+lr_scheduler_patience: 15
+lr_scheduler_factor: 0.5
+early_stopping_lower_bounds:
+  LR: 1.0e-6
+early_stopping_patiences:
+  validation_loss: 30
+metrics_key: validation_loss
+
+append: false
+seed: 123456
+dataset_seed: 123456
+default_dtype: float32
+e3nn_optimization_defaults:
+  jit_script_fx: false
+spingnn_compile:
+  enabled: true
+  scope: full_fx
+  dynamic: true
+  inductor_options: {}
+float32_matmul_precision: high
+allow_tf32: true
+# H100 TF32 force errors were 2.93e-3 to 3.92e-3 (8e-3 gate), and energy
+# errors were 2.227e-4 to 2.264e-4 eV/atom (5e-4 gate).
+# A4 calibration: bf16 force relative error remained above 1e-2 even after
+# expanding the fp32 whitelist. Keep train_autocast disabled for force, stress,
+# or spin-force supervision; use fp32 or calibrated TF32 instead. bf16 is only
+# suitable for energy-only/pretraining experiments with a separate numeric gate.
+train_autocast:
+  enabled: false
+  dtype: bfloat16
+dataloader_num_workers: 0
+use_ema: true
+ema_decay: 0.99
+ema_use_num_updates: true
+wandb: false
+verbose: info

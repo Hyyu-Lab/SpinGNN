@@ -1,0 +1,4 @@
+SPINGNN2_1.0 {
+  global: sp2_*;
+  local: *;
+};
