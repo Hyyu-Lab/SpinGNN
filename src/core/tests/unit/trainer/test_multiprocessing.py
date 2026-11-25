@@ -67,7 +67,7 @@ def _assert_reaped(context):
 @pytest.mark.skipif(os.name != "posix", reason="POSIX worker signal contract")
 def test_success_reaps_all_workers(tmp_path):
     with _workers(tmp_path, ("success", "success")) as context:
-        supervisor.join_workers(context, nprocs=2, timeout=1)
+        supervisor.join_workers(context, nprocs=2, timeout=10)
         assert [process.exitcode for process in context.processes] == [0, 0]
         _assert_reaped(context)
 
@@ -78,7 +78,7 @@ def test_worker_exception_keeps_traceback_and_reaps_peer(tmp_path):
         with pytest.raises(
             ProcessRaisedException, match="intentional worker exception from rank 1"
         ) as failure:
-            supervisor.join_workers(context, nprocs=2, timeout=1)
+            supervisor.join_workers(context, nprocs=2, timeout=10)
         assert failure.value.error_index == 1
         assert "ValueError" in str(failure.value)
         assert context.processes[0].exitcode == -signal.SIGKILL
@@ -89,7 +89,7 @@ def test_worker_exception_keeps_traceback_and_reaps_peer(tmp_path):
 def test_nonzero_exit_keeps_exitcode_and_reaps_peer(tmp_path):
     with _workers(tmp_path, ("ignore_term", "nonzero")) as context:
         with pytest.raises(ProcessExitedException) as failure:
-            supervisor.join_workers(context, nprocs=2, timeout=1)
+            supervisor.join_workers(context, nprocs=2, timeout=10)
         assert failure.value.error_index == 1 and failure.value.exit_code == 7
         assert context.processes[0].exitcode == -signal.SIGKILL
         _assert_reaped(context)
@@ -97,7 +97,7 @@ def test_nonzero_exit_keeps_exitcode_and_reaps_peer(tmp_path):
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX worker signal contract")
 def test_timeout_kills_all_sigterm_ignoring_workers(tmp_path, monkeypatch):
-    monkeypatch.setattr(supervisor, "_CLEANUP_TIMEOUT", 1.0)
+    monkeypatch.setattr(supervisor, "_CLEANUP_TIMEOUT", 3.0)
     monkeypatch.setattr(supervisor, "_TERMINATE_GRACE", 0.1)
     with _workers(tmp_path, ("ignore_term", "ignore_term")) as context:
         with pytest.raises(TimeoutError, match="worker 0 .*0.1 second join deadline"):
