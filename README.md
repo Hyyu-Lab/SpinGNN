@@ -410,6 +410,10 @@ and [CITATION.cff](CITATION.cff).
    “A Physical Response-and-Memory Model for Muon Optimization,”
    *arXiv preprint* (2026).
    [arXiv:2608.22994](https://arxiv.org/abs/2608.22994)
+6. **GPST & CFI**: Y. Zheng, L. Hong, X. Gong, H. Xiang, and H. Yu,
+   “Efficient spin-lattice dynamics and spin thermometry with machine-learned
+   magnetic potentials,” *arXiv preprint* (2026).
+   [arXiv:2611.32129](https://arxiv.org/abs/2611.32129)
 
 ### Contributors & Project Leadership
 

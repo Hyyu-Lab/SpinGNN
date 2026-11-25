@@ -149,3 +149,24 @@ references:
     identifiers:
       - type: url
         value: https://arxiv.org/abs/2608.22994
+  - type: article
+    title: Efficient spin-lattice dynamics and spin thermometry with machine-learned magnetic potentials
+    authors:
+      - given-names: Yuanmai
+        family-names: Zheng
+      - given-names: Liangliang
+        family-names: Hong
+      - given-names: Xingao
+        family-names: Gong
+      - given-names: Hongjun
+        family-names: Xiang
+        orcid: https://orcid.org/0000-0002-9396-3214
+      - given-names: Hongyu
+        family-names: Yu
+        orcid: https://orcid.org/0000-0002-2513-2523
+    year: 2026
+    date-published: 2026-11-24
+    url: https://arxiv.org/abs/2611.32129
+    identifiers:
+      - type: url
+        value: https://arxiv.org/abs/2611.32129
